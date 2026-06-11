@@ -165,6 +165,30 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 .session-size-warn{font-size:10px;color:#fcd34d;}
 .reingest-banner{background:rgba(245,158,11,.1);border-bottom:1px solid rgba(245,158,11,.3);padding:8px 20px;display:flex;align-items:center;gap:12px;font-size:12px;color:#fcd34d;}
 .reingest-banner button{flex-shrink:0;}
+/* date filter strip */
+.date-strip{background:var(--surface2);border-bottom:1px solid var(--border);padding:7px 20px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:11px;}
+.date-strip-label{color:var(--muted);letter-spacing:.06em;text-transform:uppercase;flex-shrink:0;}
+.date-preset{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 10px;font-size:11px;font-family:var(--font);cursor:pointer;border-radius:2px;transition:all .15s;}
+.date-preset:hover{border-color:var(--teal);color:var(--teal);}
+.date-preset.active{border-color:var(--teal);color:var(--teal);background:rgba(0,212,180,.08);}
+.date-strip-custom{display:flex;align-items:center;gap:6px;}
+.date-strip-custom input{width:130px;padding:3px 8px;font-size:11px;background:var(--bg);border:1px solid var(--border);color:var(--text);font-family:var(--font);border-radius:2px;outline:none;}
+.date-strip-custom input:focus{border-color:var(--teal);}
+.date-strip-divider{width:1px;height:16px;background:var(--border);margin:0 4px;flex-shrink:0;}
+/* stacked bar builder */
+.sb-bar-list{display:flex;flex-direction:column;gap:6px;margin-bottom:10px;}
+.sb-bar-row{background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:10px 12px;display:flex;align-items:flex-start;gap:8px;}
+.sb-bar-row-body{flex:1;display:flex;flex-direction:column;gap:6px;}
+.sb-seg-list{display:flex;flex-direction:column;gap:6px;margin-bottom:8px;}
+.sb-seg-row{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:6px 8px;}
+.sb-seg-swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.sb-seg-label{width:110px;flex-shrink:0;}
+.sb-seg-filters{display:flex;flex:1;gap:6px;flex-wrap:wrap;}
+.sb-seg-bool{flex:1;min-width:140px;}
+.sb-seg-sent{width:100px;flex-shrink:0;}
+.sb-seg-domain{width:120px;flex-shrink:0;}
+.sb-del{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 4px;font-size:13px;flex-shrink:0;}
+.sb-del:hover{color:var(--neg);}
 /* stacked bar stack builder */
 .stack-group-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
 .stack-group-row{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:6px 8px;}
@@ -230,6 +254,11 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 .mention-card{cursor:pointer;transition:border-color .15s;}
 .mention-card:hover{border-color:var(--teal);}
 .mention-card a.mention-card-link{display:block;text-decoration:none;color:inherit;}
+/* KWIC — keyword in context snippet */
+.kwic-snippet{font-size:11px;color:var(--muted);line-height:1.6;margin:6px 0 4px;padding:6px 8px;background:rgba(0,0,0,.2);border-left:2px solid var(--teal);border-radius:0 2px 2px 0;}
+.kwic-snippet mark{background:rgba(0,212,180,.22);color:var(--teal);border-radius:2px;padding:0 2px;font-style:normal;}
+.feed-kwic{font-size:11px;color:var(--muted);line-height:1.6;margin:4px 0;padding:5px 8px;background:rgba(0,0,0,.2);border-left:2px solid var(--teal);border-radius:0 2px 2px 0;}
+.feed-kwic mark{background:rgba(0,212,180,.22);color:var(--teal);border-radius:2px;padding:0 2px;font-style:normal;}
 
 @media(max-width:900px){.sidebar{width:240px;}.stats-strip{grid-template-columns:repeat(2,1fr);}.search-grid{grid-template-columns:1fr;}.main-area{grid-template-columns:1fr;}.feed-filters{width:200px;}}
 @media(max-width:640px){.analytics-body{flex-direction:column;height:auto;}.sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);}.feed-layout{flex-direction:column;height:auto;}.feed-filters{width:100%;border-right:none;border-bottom:1px solid var(--border);}}
@@ -369,6 +398,24 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
     <span>⚠ This session was saved without record data — charts are restored but the feed and segment drill-downs are empty.</span>
     <button class="btn btn-primary btn-sm" onclick="reIngestSession()">Re-ingest data now</button>
     <button class="btn-icon" onclick="$('reingest-banner').classList.add('hidden')" style="margin-left:auto;" title="Dismiss">✕</button>
+  </div>
+
+  <!-- DATE FILTER STRIP -->
+  <div class="date-strip" id="date-strip">
+    <span class="date-strip-label">Viewing:</span>
+    <button class="date-preset active" id="preset-all" onclick="setDatePreset('all')">All data</button>
+    <button class="date-preset" id="preset-7d"  onclick="setDatePreset('7d')">7 days</button>
+    <button class="date-preset" id="preset-30d" onclick="setDatePreset('30d')">30 days</button>
+    <button class="date-preset" id="preset-3m"  onclick="setDatePreset('3m')">3 months</button>
+    <button class="date-preset" id="preset-6m"  onclick="setDatePreset('6m')">6 months</button>
+    <button class="date-preset" id="preset-9m"  onclick="setDatePreset('9m')">9 months</button>
+    <div class="date-strip-divider"></div>
+    <div class="date-strip-custom">
+      <input type="date" id="strip-from" onchange="setDatePreset('custom')" />
+      <span style="color:var(--muted);">to</span>
+      <input type="date" id="strip-to"   onchange="setDatePreset('custom')" />
+    </div>
+    <span id="strip-active-label" style="color:var(--muted);margin-left:4px;font-size:10px;"></span>
   </div>
 
   <div class="stats-strip">
@@ -517,30 +564,38 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
           <option value="entities">Entities</option>
         </select>
       </div>
-      <!-- STACK BY (stacked bar only) -->
-      <div id="m-stack-row" class="form-row hidden">
-        <label>Stack by</label>
-        <select id="m-stack-by" onchange="onStackByChange()">
-          <option value="sentiment">Sentiment (positive / neutral / negative)</option>
-          <option value="source">Source (online news, X, Reddit…)</option>
-          <option value="emotion">Emotion (joy, trust, anger…)</option>
-          <option value="custom">Custom groups (define your own)</option>
-        </select>
-        <!-- Custom group builder -->
-        <div id="m-stack-custom-wrap" class="hidden" style="margin-top:10px;">
-          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
-            <span style="font-size:11px;color:var(--muted);">Define stack layers (each with a label + boolean filter). An "Other" layer catches anything unmatched.</span>
-            <button class="btn btn-ghost btn-xs" onclick="addStackGroup()" style="flex-shrink:0;">＋ Add layer</button>
+      <!-- STACKED BAR: Bars + Segments builder -->
+      <div id="m-stack-row" class="hidden">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">
+          <div>
+            <h3 style="margin-bottom:2px;">Bars <span style="color:var(--muted);font-weight:400;font-size:11px;">— the groups on the X-axis</span></h3>
           </div>
-          <div class="stack-group-list" id="stack-group-list"></div>
+          <button class="btn btn-ghost btn-sm" onclick="addStackBar()">＋ Add bar</button>
+        </div>
+        <div class="sb-bar-list" id="sb-bar-list"></div>
+
+        <div style="margin-top:14px;margin-bottom:8px;display:flex;align-items:center;justify-content:space-between;">
+          <div>
+            <h3 style="margin-bottom:2px;">Segments <span style="color:var(--muted);font-weight:400;font-size:11px;">— the colour layers stacked within each bar</span></h3>
+          </div>
+          <button class="btn btn-ghost btn-sm" onclick="addStackSeg()">＋ Add segment</button>
+        </div>
+        <div class="sb-seg-list" id="sb-seg-list"></div>
+
+        <div class="bool-hint" style="margin-top:8px;">
+          <strong style="color:var(--teal);">Boolean filter syntax:</strong>
+          <span style="font-family:var(--mono);">Harvey AND (funding OR investment) &nbsp;·&nbsp; law* AND NOT lawyer &nbsp;·&nbsp; merger NEAR/5 acquisition</span>
         </div>
       </div>
 
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
-        <h3>Segments <span style="color:var(--muted);font-weight:400;font-size:11px;">(up to 25)</span></h3>
-        <button class="btn btn-ghost btn-sm" onclick="addSegment()">＋ Add segment</button>
+      <!-- All other chart types: standard segment builder -->
+      <div id="m-standard-row">
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+          <h3>Segments <span style="color:var(--muted);font-weight:400;font-size:11px;">(up to 25)</span></h3>
+          <button class="btn btn-ghost btn-sm" onclick="addSegment()">＋ Add segment</button>
+        </div>
+        <div class="segment-list" id="segment-list"></div>
       </div>
-      <div class="segment-list" id="segment-list"></div>
       <div class="bool-hint">
         <strong style="color:var(--teal);">Boolean filter syntax:</strong><br>
         <span style="font-family:var(--mono);">Harvey AND (funding OR investment)</span><br>
@@ -1084,6 +1139,7 @@ async function showAnalytics() {
   showScreen('screen-analytics');
   const banner = $('reingest-banner');
   if(banner) banner.classList.add('hidden');
+  initDateStrip();
 
   const sessionId = ST.currentSessionId;
   const total     = sessionId ? await dbTotalCount(sessionId) : 0;
@@ -1236,6 +1292,8 @@ async function resolveSegment(seg) {
     bool:      seg.bool,
     sentiment: seg.sentiment,
     domain:    seg.domain,
+    dateFrom:  ACTIVE_DATE.from || ST.dateFrom,
+    dateTo:    ACTIVE_DATE.to   || ST.dateTo,
   });
 }
 
@@ -1252,27 +1310,28 @@ function openChartModal(type, editIdx = null) {
   $('m-gran-row').classList.add('hidden');
   $('m-wc-row').classList.add('hidden');
   $('m-stack-row').classList.add('hidden');
-  $('m-stack-custom-wrap').classList.add('hidden');
-  $('stack-group-list').innerHTML = '';
+  $('m-standard-row').classList.remove('hidden');
+  $('sb-bar-list').innerHTML  = '';
+  $('sb-seg-list').innerHTML  = '';
 
   const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud' };
   $('modal-title').textContent = titles[type] || 'Chart';
 
-  if(type === 'line')         $('m-gran-row').classList.remove('hidden');
-  if(type === 'wordcloud')    $('m-wc-row').classList.remove('hidden');
-  if(type === 'stacked-bar')  $('m-stack-row').classList.remove('hidden');
+  if(type === 'line')        $('m-gran-row').classList.remove('hidden');
+  if(type === 'wordcloud')   $('m-wc-row').classList.remove('hidden');
+  if(type === 'stacked-bar') {
+    $('m-stack-row').classList.remove('hidden');
+    $('m-standard-row').classList.add('hidden');
+  }
 
   if(editIdx !== null) {
     const def = ST.chartDefs[editIdx];
     $('m-title').value = def.title || '';
     if(def.granularity) $('m-gran').value      = def.granularity;
     if(def.wcField)     $('m-wc-field').value  = def.wcField;
-    if(def.stackBy)   {
-      $('m-stack-by').value = def.stackBy;
-      onStackByChange();
-      if(def.stackBy === 'custom' && def.stackGroups) {
-        def.stackGroups.forEach(g => addStackGroup(g));
-      }
+    if(type === 'stacked-bar') {
+      (def.stackBars || []).forEach(b => addStackBar(b));
+      (def.stackSegs || []).forEach(s => addStackSeg(s));
     }
     // Restore width radio
     const wval = def.width || 'full';
@@ -1378,8 +1437,8 @@ async function buildChart() {
     granularity: $('m-gran').value,
     wcField:     $('m-wc-field').value,
     width:       selectedWidth,
-    stackBy:     $('m-stack-by').value,
-    stackGroups: readStackGroups(),
+    stackBars:   readStackBars(),
+    stackSegs:   readStackSegs(),
   };
   closeModal();
 
@@ -1470,7 +1529,7 @@ async function drawChart(def, idx) {
   body.innerHTML = '';
   switch(def.type) {
     case 'bar':         drawBar(body, idx, segs); break;
-    case 'stacked-bar': drawStackedBar(body, idx, def, segs); break;
+    case 'stacked-bar': await drawStackedBar(body, idx, def); break;
     case 'line':        drawLine(body, idx, def, segs); break;
     case 'pie':         drawPie(body, idx, segs); break;
     case 'wordcloud':   drawWordCloud(body, idx, def, segs); break;
@@ -1778,8 +1837,9 @@ async function applyFeedFilters() {
   if(!sessionId) return;
 
   const searchId  = $('feed-search-sel').value;
-  const dateFrom  = $('feed-date-from').value;
-  const dateTo    = $('feed-date-to').value;
+  // Use active date strip selection if feed dates match ingest range (i.e. not manually overridden)
+  const dateFrom  = $('feed-date-from').value || ACTIVE_DATE.from || ST.dateFrom;
+  const dateTo    = $('feed-date-to').value   || ACTIVE_DATE.to   || ST.dateTo;
   const bool      = $('feed-bool').value;
   const sentiment = $('feed-sentiment').value;
   const domain    = $('feed-domain').value;
@@ -1834,8 +1894,11 @@ function renderFeed() {
   const searchMap = {};
   ST.selectedSearches.forEach(s => { searchMap[String(s.id)] = s.name; });
 
+  // Pass current boolean filter for KWIC highlighting
+  const activeBool = $('feed-bool') ? $('feed-bool').value : '';
+
   visible.forEach(rec => {
-    const card = buildFeedCard(rec, searchMap);
+    const card = buildFeedCard(rec, searchMap, activeBool);
     main.appendChild(card);
   });
 
@@ -1854,7 +1917,7 @@ function renderFeed() {
   }
 }
 
-function buildFeedCard(rec, searchMap) {
+function buildFeedCard(rec, searchMap, boolExpr = '') {
   const sl       = sentimentLabel(rec);
   const dateStr  = rec.publishedAt
     ? new Date(rec.publishedAt).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'})
@@ -1880,7 +1943,12 @@ function buildFeedCard(rec, searchMap) {
       <div class="feed-card-title">${escHtml(title)}</div>
       ${src ? `<span class="feed-card-source">${escHtml(src)}</span>` : ''}
     </div>
-    ${snippet ? `<div class="feed-card-snippet">${escHtml(snippet)}</div>` : ''}
+    ${(() => {
+      const kwic = boolExpr ? kwicSnippet(snippet, boolExpr) : null;
+      if(kwic) return `<div class="feed-kwic">${kwic}</div>`;
+      if(snippet) return `<div class="feed-card-snippet">${escHtml(snippet)}</div>`;
+      return '';
+    })()}
     <div class="feed-card-meta">
       ${dateStr     ? `<span class="feed-meta-tag date">📅 ${dateStr}</span>` : ''}
       ${rec.domainName ? `<span class="feed-meta-tag domain">${escHtml(rec.domainName)}</span>` : ''}
@@ -1916,7 +1984,7 @@ function exportPDF() {
 // ════════════════════════════════════════════════
 // MENTIONS DRAWER
 // ════════════════════════════════════════════════
-function openMentions(segLabel, records) {
+function openMentions(segLabel, records, boolExpr = '') {
   $('mentions-title').textContent = segLabel;
   $('mentions-meta').textContent  = records.length.toLocaleString() + ' mentions matching filter';
   const list = $('mentions-list');
@@ -1954,9 +2022,15 @@ function openMentions(segLabel, records) {
       card.rel    = 'noopener noreferrer';
       card.style.cssText = 'display:block;text-decoration:none;color:inherit;';
     }
+    // KWIC: find keyword in context from content field
+    const kwic = boolExpr ? kwicSnippet(rec.content || rec.title || '', boolExpr) : null;
+
     card.innerHTML = `
       <div class="mention-title">${escHtml(title)}</div>
-      ${snippet ? `<div class="mention-content">${escHtml(snippet)}</div>` : ''}
+      ${kwic
+        ? `<div class="kwic-snippet">${kwic}</div>`
+        : snippet ? `<div class="mention-content">${escHtml(snippet)}</div>` : ''
+      }
       <div class="mention-meta">
         ${source ? `<span class="mention-tag source">${escHtml(source)}</span>` : ''}
         ${sentLabel ? `<span class="mention-tag sentiment-${sentLabel}">${sentLabel}</span>` : ''}
@@ -1975,6 +2049,97 @@ function closeMentions(e) {
 }
 function closeMentionsBtn() {
   $('mentions-overlay').classList.remove('open');
+}
+
+// ════════════════════════════════════════════════
+// KEYWORD IN CONTEXT (KWIC) SNIPPET
+// Extracts search terms from a boolean expression,
+// finds the first match in text, returns a highlighted
+// excerpt with ~60 chars of context either side.
+// ════════════════════════════════════════════════
+function extractTerms(boolExpr) {
+  if(!boolExpr || !boolExpr.trim()) return [];
+  // Pull out quoted phrases and bare words, skip operators
+  const terms = [];
+  const operators = new Set(['AND','OR','NOT','NEAR']);
+  // Match quoted phrases first, then individual words
+  const re = /"([^"]+)"|([^\s"()]+)/g;
+  let m;
+  while((m = re.exec(boolExpr)) !== null) {
+    const term = (m[1] || m[2] || '').trim();
+    if(!term) continue;
+    // Skip operators and NEAR/n patterns
+    if(operators.has(term.toUpperCase())) continue;
+    if(/^NEAR\/\d+$/i.test(term)) continue;
+    // Strip wildcards for matching (keep stem)
+    const clean = term.replace(/[*?]/g,'').toLowerCase();
+    if(clean.length > 1) terms.push({ raw: term, clean });
+  }
+  return terms;
+}
+
+function kwicSnippet(text, boolExpr, windowChars = 120) {
+  if(!text || !boolExpr || !boolExpr.trim()) return null;
+
+  const terms = extractTerms(boolExpr);
+  if(!terms.length) return null;
+
+  const lower = text.toLowerCase();
+
+  // Find the first match position across all terms
+  let firstPos = -1;
+  let matchedTerm = null;
+  let matchLen    = 0;
+
+  for(const t of terms) {
+    const idx = lower.indexOf(t.clean);
+    if(idx !== -1 && (firstPos === -1 || idx < firstPos)) {
+      firstPos    = idx;
+      matchedTerm = t.clean;
+      matchLen    = t.clean.length;
+    }
+  }
+
+  if(firstPos === -1) return null; // no match found in text
+
+  // Extract window around match
+  const start   = Math.max(0, firstPos - windowChars);
+  const end     = Math.min(text.length, firstPos + matchLen + windowChars);
+  let excerpt   = text.slice(start, end).trim();
+
+  // Add ellipsis if truncated
+  if(start > 0)          excerpt = '…' + excerpt;
+  if(end < text.length)  excerpt = excerpt + '…';
+
+  // Highlight ALL matching terms in the excerpt (first occurrence of each)
+  // Build a list of {pos, len, term} for all terms found in excerpt
+  const excerptLower = excerpt.toLowerCase();
+  const hits = [];
+  for(const t of terms) {
+    let p = 0;
+    while(true) {
+      const idx = excerptLower.indexOf(t.clean, p);
+      if(idx === -1) break;
+      hits.push({ pos: idx, len: t.clean.length });
+      p = idx + t.clean.length; // only first occurrence per term
+      break;
+    }
+  }
+
+  // Sort hits by position and build highlighted HTML
+  hits.sort((a,b) => a.pos - b.pos);
+
+  let html = '';
+  let cursor = 0;
+  for(const hit of hits) {
+    if(hit.pos < cursor) continue; // overlapping, skip
+    html += escHtml(excerpt.slice(cursor, hit.pos));
+    html += '<mark>' + escHtml(excerpt.slice(hit.pos, hit.pos + hit.len)) + '</mark>';
+    cursor = hit.pos + hit.len;
+  }
+  html += escHtml(excerpt.slice(cursor));
+
+  return html;
 }
 
 function escHtml(str) {
@@ -2010,7 +2175,7 @@ function mkLegend(body, segs) {
     item.title = 'Click to view mentions';
     item.innerHTML = `<div class="legend-dot" style="background:${s.color}"></div>
       ${escHtml(s.label)}: <strong style="color:var(--text);margin-left:3px;">${s.records.length.toLocaleString()}</strong>`;
-    item.addEventListener('click', () => openMentions(s.label, s.records));
+    item.addEventListener('click', () => openMentions(s.label, s.records, s.bool||''));
     item.addEventListener('mouseenter', () => item.style.background='rgba(0,212,180,.06)');
     item.addEventListener('mouseleave', () => item.style.background='');
     el.appendChild(item);
@@ -2043,7 +2208,7 @@ function drawBar(body, idx, segs) {
       responsive:true, maintainAspectRatio:false,
       indexAxis: horizontal ? 'y' : 'x',
       onClick: (_e, els) => {
-        if(els.length) openMentions(segs[els[0].index].label, segs[els[0].index].records);
+        if(els.length) openMentions(segs[els[0].index].label, segs[els[0].index].records, segs[els[0].index].bool);
       },
       plugins: { legend:{display:false}, tooltip:TOOLTIP },
       scales: SCALES,
@@ -2054,183 +2219,242 @@ function drawBar(body, idx, segs) {
 }
 
 // ── STACKED BAR ──
-// ── STACK BUILDER HELPERS ──
-const STACK_PALETTE = ['#00D4B4','#3B82F6','#F59E0B','#EC4899','#8B5CF6','#22c55e','#f97316','#06b6d4','#a855f7','#fb7185'];
+// ════════════════════════════════════════════════
+// DATE FILTER (global — applied to all chart queries + feed)
+// ════════════════════════════════════════════════
+const ACTIVE_DATE = { from: null, to: null }; // null = use full ingest range
 
-function onStackByChange() {
-  const val = $('m-stack-by').value;
-  const wrap = $('m-stack-custom-wrap');
-  if(val === 'custom') { wrap.classList.remove('hidden'); }
-  else { wrap.classList.add('hidden'); }
+function initDateStrip() {
+  $('strip-from').value = ST.dateFrom;
+  $('strip-to').value   = ST.dateTo;
+  ACTIVE_DATE.from = null;
+  ACTIVE_DATE.to   = null;
+  document.querySelectorAll('.date-preset').forEach(b => b.classList.remove('active'));
+  $('preset-all').classList.add('active');
+  $('strip-active-label').textContent = '';
 }
 
-function addStackGroup(prefill = null) {
-  const list = $('stack-group-list');
-  const i     = list.children.length;
-  const color = STACK_PALETTE[i % STACK_PALETTE.length];
-  const row   = document.createElement('div');
-  row.className = 'stack-group-row';
+function setDatePreset(preset) {
+  document.querySelectorAll('.date-preset').forEach(b => b.classList.remove('active'));
+  const el = $('preset-' + preset);
+  if(el) el.classList.add('active');
+
+  const now   = new Date(ST.dateTo);
+  const floor = new Date(ST.dateFrom);
+
+  let from = null, to = null;
+
+  if(preset === 'all') {
+    from = null; to = null;
+    $('strip-from').value = ST.dateFrom;
+    $('strip-to').value   = ST.dateTo;
+    $('strip-active-label').textContent = '';
+  } else if(preset === 'custom') {
+    from = $('strip-from').value || ST.dateFrom;
+    to   = $('strip-to').value   || ST.dateTo;
+    // Clamp to ingest range
+    if(from < ST.dateFrom) from = ST.dateFrom;
+    if(to   > ST.dateTo)   to   = ST.dateTo;
+    $('strip-from').value = from;
+    $('strip-to').value   = to;
+    $('strip-active-label').textContent = from + ' → ' + to;
+  } else {
+    const days = { '7d':7, '30d':30, '3m':90, '6m':183, '9m':274 }[preset];
+    const fromDate = new Date(now);
+    fromDate.setDate(fromDate.getDate() - days);
+    // Clamp to ingest start
+    from = (fromDate < floor ? floor : fromDate).toISOString().slice(0,10);
+    to   = now.toISOString().slice(0,10);
+    $('strip-from').value = from;
+    $('strip-to').value   = to;
+    $('strip-active-label').textContent = from + ' → ' + to;
+  }
+
+  ACTIVE_DATE.from = from;
+  ACTIVE_DATE.to   = to;
+
+  // Refresh all mounted charts
+  refreshAllCharts();
+  // Refresh feed if on feed tab
+  if($('tab-feed').classList.contains('active')) applyFeedFilters();
+}
+
+async function refreshAllCharts() {
+  for(let idx = 0; idx < ST.chartDefs.length; idx++) {
+    const def = ST.chartDefs[idx];
+    if(!def) continue;
+    await reDrawChart(idx);
+  }
+}
+
+// ── STACKED BAR BUILDER HELPERS ──
+const STACK_PALETTE = ['#00D4B4','#3B82F6','#F59E0B','#EC4899','#8B5CF6','#22c55e','#f97316','#06b6d4','#a855f7','#fb7185'];
+
+function addStackBar(prefill = null) {
+  const list = $('sb-bar-list');
+  const i    = list.children.length;
+  const row  = document.createElement('div');
+  row.className = 'sb-bar-row';
   row.innerHTML = `
-    <div class="stack-group-swatch" style="background:${color};"></div>
-    <input type="text" class="stack-group-label" placeholder="Layer ${i+1}" value="${prefill?.label||''}" style="width:100px;flex-shrink:0;" />
-    <input type="text" class="stack-group-bool" placeholder='Boolean filter e.g. "Series A" OR "seed round"' value="${prefill?.bool||''}" />
-    <button class="stack-group-del" onclick="this.closest('.stack-group-row').remove()" title="Remove">✕</button>`;
+    <div style="flex:1;display:flex;flex-direction:column;gap:6px;">
+      <div style="display:flex;align-items:center;gap:6px;">
+        <input type="text" class="sb-bar-label" placeholder="Bar ${i+1} label" value="${prefill?.label||''}" style="flex:1;font-weight:500;" />
+        <button class="sb-del" onclick="this.closest('.sb-bar-row').remove()" title="Remove bar">✕</button>
+      </div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <input type="text" class="sb-bar-bool" placeholder="Keyword filter (boolean)" value="${prefill?.bool||''}" style="flex:1;" />
+        <select class="sb-bar-sentiment" style="width:110px;flex-shrink:0;">
+          <option value="any">Any sentiment</option>
+          <option value="positive">Positive</option>
+          <option value="neutral">Neutral</option>
+          <option value="negative">Negative</option>
+        </select>
+        <input type="text" class="sb-bar-domain" placeholder="Domain (optional)" value="${prefill?.domain||''}" style="width:130px;flex-shrink:0;" />
+      </div>
+    </div>`;
+  if(prefill?.sentiment) row.querySelector('.sb-bar-sentiment').value = prefill.sentiment;
   list.appendChild(row);
 }
 
-function readStackGroups() {
-  return Array.from(document.querySelectorAll('#stack-group-list .stack-group-row')).map((row, i) => ({
-    label: row.querySelector('.stack-group-label').value || ('Layer '+(i+1)),
-    bool:  row.querySelector('.stack-group-bool').value  || '',
-    color: STACK_PALETTE[i % STACK_PALETTE.length],
+function addStackSeg(prefill = null) {
+  const list  = $('sb-seg-list');
+  const i     = list.children.length;
+  const color = STACK_PALETTE[i % STACK_PALETTE.length];
+  const row   = document.createElement('div');
+  row.className = 'sb-seg-row';
+  row.innerHTML = `
+    <div class="sb-seg-swatch" style="background:${color};"></div>
+    <input type="text" class="sb-seg-label" placeholder="Segment ${i+1}" value="${prefill?.label||''}" style="width:110px;flex-shrink:0;" />
+    <input type="text" class="sb-seg-bool" placeholder="Keyword filter (boolean)" value="${prefill?.bool||''}" style="flex:1;" />
+    <select class="sb-seg-sent" style="width:100px;flex-shrink:0;">
+      <option value="any">Any sentiment</option>
+      <option value="positive">Positive</option>
+      <option value="neutral">Neutral</option>
+      <option value="negative">Negative</option>
+    </select>
+    <input type="text" class="sb-seg-domain" placeholder="Domain" value="${prefill?.domain||''}" style="width:110px;flex-shrink:0;" />
+    <button class="sb-del" onclick="this.closest('.sb-seg-row').remove()" title="Remove">✕</button>`;
+  if(prefill?.sentiment) row.querySelector('.sb-seg-sent').value = prefill.sentiment;
+  list.appendChild(row);
+}
+
+function readStackBars() {
+  return Array.from(document.querySelectorAll('#sb-bar-list .sb-bar-row')).map((row, i) => ({
+    label:     row.querySelector('.sb-bar-label').value     || ('Bar '+(i+1)),
+    bool:      row.querySelector('.sb-bar-bool').value      || '',
+    sentiment: row.querySelector('.sb-bar-sentiment').value || 'any',
+    domain:    row.querySelector('.sb-bar-domain').value    || '',
   }));
 }
 
-// Build stack layer definitions from a def object
-function resolveStackLayers(def) {
-  const by = def.stackBy || 'sentiment';
-  if(by === 'sentiment') return [
-    { label:'Positive', color:'#22c55e', match: r => sentimentLabel(r) === 'positive' },
-    { label:'Neutral',  color:'#94a3b8', match: r => sentimentLabel(r) === 'neutral'  },
-    { label:'Negative', color:'#ef4444', match: r => sentimentLabel(r) === 'negative' },
-  ];
-  if(by === 'source') {
-    // Collect all unique sources across all segments
-    const sources = [...new Set(getAllRecords().map(r => r.source).filter(Boolean))].sort();
-    return sources.map((s, i) => ({
-      label: fmtSource(s),
-      color: STACK_PALETTE[i % STACK_PALETTE.length],
-      match: r => r.source === s,
-    }));
-  }
-  if(by === 'emotion') {
-    const EMOTIONS = ['joy','trust','anticipation','surprise','fear','sadness','disgust','anger'];
-    return [
-      ...EMOTIONS.map((e, i) => ({
-        label: e.charAt(0).toUpperCase()+e.slice(1),
-        color: STACK_PALETTE[i % STACK_PALETTE.length],
-        match: r => (r.emotion||'').toLowerCase() === e,
-      })),
-      { label:'Other', color:'#475569', match: r => !EMOTIONS.includes((r.emotion||'').toLowerCase()) },
-    ];
-  }
-  if(by === 'custom') {
-    const groups = (def.stackGroups || []).filter(g => g.label);
-    const matched = new Set();
-    const layers = groups.map(g => ({
-      label: g.label, color: g.color,
-      bool: g.bool,
-      match: r => {
-        if(!boolMatch(g.bool, getRecordText(r))) return false;
-        matched.add(r);
-        return true;
-      },
-    }));
-    layers.push({ label:'Other', color:'#475569', match: r => !matched.has(r) });
-    return layers;
-  }
-  return [];
+function readStackSegs() {
+  return Array.from(document.querySelectorAll('#sb-seg-list .sb-seg-row')).map((row, i) => ({
+    label:     row.querySelector('.sb-seg-label').value || ('Segment '+(i+1)),
+    bool:      row.querySelector('.sb-seg-bool').value  || '',
+    sentiment: row.querySelector('.sb-seg-sent').value  || 'any',
+    domain:    row.querySelector('.sb-seg-domain').value|| '',
+    color:     STACK_PALETTE[i % STACK_PALETTE.length],
+  }));
 }
 
-// ── STACKED BAR (rewritten) ──
-function drawStackedBar(body, idx, def, segs) {
-  const layers  = resolveStackLayers(def);
-  if(!layers.length) { body.innerHTML='<div style="color:var(--muted);padding:20px;">No stack layers defined.</div>'; return; }
+// ── STACKED BAR (bars × segments model) ──
+async function drawStackedBar(body, idx, def) {
+  const bars = def.stackBars || [];
+  const segs = def.stackSegs || [];
 
-  const horizontal = segs.length > 7;
-  const h = horizontal ? Math.max(300, segs.length * 34) : 300;
+  if(!bars.length || !segs.length) {
+    body.innerHTML = '<div style="color:var(--muted);padding:20px;font-size:13px;">Add at least one bar and one segment to build this chart.</div>';
+    return;
+  }
+
+  const sessionId = ST.currentSessionId;
+  const activeDateFilter = {
+    dateFrom: ACTIVE_DATE.from || ST.dateFrom,
+    dateTo:   ACTIVE_DATE.to   || ST.dateTo,
+  };
+
+  // For each bar, for each segment: query IndexedDB with combined filters
+  // recs[barIdx][segIdx] = []
+  const recs = await Promise.all(
+    bars.map(bar =>
+      Promise.all(
+        segs.map(seg =>
+          dbQuery(sessionId, {
+            bool:      [bar.bool, seg.bool].filter(Boolean).join(' AND ').trim() || '',
+            sentiment: seg.sentiment !== 'any' ? seg.sentiment : (bar.sentiment !== 'any' ? bar.sentiment : 'any'),
+            domain:    seg.domain || bar.domain || '',
+            dateFrom:  activeDateFilter.dateFrom,
+            dateTo:    activeDateFilter.dateTo,
+          })
+        )
+      )
+    )
+  );
+
+  const horizontal = bars.length > 7;
+  const h = horizontal ? Math.max(300, bars.length * 34) : 300;
   const canvas = mkCanvas(body, h);
 
-  // For each layer, for each segment: collect matching records
-  // layerRecs[layerIdx][segIdx] = []
-  const layerRecs = layers.map(() => segs.map(() => []));
-
-  segs.forEach((s, si) => {
-    // For custom, reset matched set per segment
-    const matched = new Set();
-    layers.forEach((layer, li) => {
-      if(def.stackBy === 'custom' && layer.label === 'Other') return; // handle last
-      s.records.forEach(r => {
-        let matches;
-        if(def.stackBy === 'custom') {
-          matches = boolMatch(layer.bool||'', getRecordText(r));
-          if(matches) matched.add(r);
-        } else {
-          matches = layer.match(r);
-        }
-        if(matches) layerRecs[li][si].push(r);
-      });
-    });
-    // Fill Other layer
-    if(def.stackBy === 'custom') {
-      const otherIdx = layers.findIndex(l => l.label === 'Other');
-      if(otherIdx > -1) {
-        layerRecs[otherIdx][si] = s.records.filter(r => !matched.has(r));
-      }
-    }
-  });
-
-  const datasets = layers.map((layer, li) => ({
-    label: layer.label,
-    data:  segs.map((_, si) => layerRecs[li][si].length),
-    backgroundColor: layer.color,
-    borderWidth: 0,
+  // datasets: one per segment (colour layer), data is count per bar
+  const datasets = segs.map((seg, si) => ({
+    label:           seg.label,
+    data:            bars.map((_, bi) => recs[bi][si].length),
+    backgroundColor: seg.color,
+    borderWidth:     0,
   }));
 
   destroyChart(idx);
   ST.chartInstances[idx] = new Chart(canvas, {
-    type:'bar',
-    data:{ labels: segs.map(s => s.label), datasets },
-    options:{
-      responsive:true, maintainAspectRatio:false,
+    type: 'bar',
+    data: { labels: bars.map(b => b.label), datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
       indexAxis: horizontal ? 'y' : 'x',
       onClick: (_e, els) => {
         if(!els.length) return;
-        const segIdx   = els[0].index;
-        const layerIdx = els[0].datasetIndex;
-        const recs     = layerRecs[layerIdx][segIdx];
-        openMentions(segs[segIdx].label + ' — ' + layers[layerIdx].label, recs);
+        const bi = els[0].index;
+        const si = els[0].datasetIndex;
+        const label = `${bars[bi].label} — ${segs[si].label}`;
+        const boolExpr = [bars[bi].bool, segs[si].bool].filter(Boolean).join(' AND ');
+        openMentions(label, recs[bi][si], boolExpr);
       },
-      plugins:{ legend:{display:false}, tooltip:TOOLTIP },
-      scales:{
-        x:{ stacked:true, ...(horizontal ? SCALES.y : SCALES.x) },
-        y:{ stacked:true, ...(horizontal ? SCALES.x : SCALES.y) },
+      plugins: { legend:{display:false}, tooltip: TOOLTIP },
+      scales: {
+        x: { stacked:true, ...(horizontal ? SCALES.y : SCALES.x) },
+        y: { stacked:true, ...(horizontal ? SCALES.x : SCALES.y) },
       }
     }
   });
   canvas.style.cursor = 'pointer';
 
-  // Legend: one row per layer, showing count per segment
+  // Legend: segment colours + per-bar counts
   const legEl = document.createElement('div');
   legEl.className = 'chart-legend';
-  legEl.style.cssText = 'margin-top:10px;flex-direction:column;gap:4px;';
+  legEl.style.cssText = 'margin-top:10px;flex-direction:column;gap:6px;';
 
-  layers.forEach((layer, li) => {
-    const hasAny = segs.some((_, si) => layerRecs[li][si].length > 0);
-    if(!hasAny) return; // hide empty layers
-
+  segs.forEach((seg, si) => {
     const row = document.createElement('div');
     row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;';
     const lbl = document.createElement('span');
-    lbl.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);min-width:80px;flex-shrink:0;';
-    lbl.innerHTML = `<div class="legend-dot" style="background:${layer.color}"></div>${escHtml(layer.label)}`;
+    lbl.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);min-width:90px;flex-shrink:0;';
+    lbl.innerHTML = `<div class="legend-dot" style="background:${seg.color}"></div>${escHtml(seg.label)}`;
     row.appendChild(lbl);
-
-    segs.forEach((s, si) => {
-      const count = layerRecs[li][si].length;
+    bars.forEach((bar, bi) => {
+      const count = recs[bi][si].length;
       const item  = document.createElement('div');
       item.className = 'legend-item';
       item.style.cssText = 'cursor:pointer;padding:2px 6px;border-radius:2px;transition:background .15s;font-size:11px;';
-      item.innerHTML = `${escHtml(s.label)}: <strong style="color:var(--text);margin-left:2px;">${count.toLocaleString()}</strong>`;
-      item.addEventListener('click', () => openMentions(s.label + ' — ' + layer.label, layerRecs[li][si]));
+      item.innerHTML = `${escHtml(bar.label)}: <strong style="color:var(--text);margin-left:2px;">${count.toLocaleString()}</strong>`;
+      const boolExpr = [bar.bool, seg.bool].filter(Boolean).join(' AND ');
+      item.addEventListener('click', () => openMentions(`${bar.label} — ${seg.label}`, recs[bi][si], boolExpr));
       item.addEventListener('mouseenter', () => item.style.background='rgba(0,212,180,.06)');
       item.addEventListener('mouseleave', () => item.style.background='');
       row.appendChild(item);
     });
     legEl.appendChild(row);
   });
-
   body.appendChild(legEl);
+
   const hint = document.createElement('div');
   hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:6px;';
   hint.textContent = 'Click any bar segment or legend item to view mentions';
@@ -2290,7 +2514,7 @@ function drawLine(body, idx, def, segs) {
         const segIdx = el.datasetIndex;
         const bkt    = allBuckets[el.index];
         const recs   = segBuckets[segIdx][bkt] || [];
-        openMentions(segs[segIdx].label + ' — ' + fmtB(bkt), recs);
+        openMentions(segs[segIdx].label + ' — ' + fmtB(bkt), recs, segs[segIdx].bool||'');
       },
       plugins:{ legend:{display:false}, tooltip:{...TOOLTIP, mode:'index', intersect:false} },
       scales:{ x:{...SCALES.x, ticks:{...SCALES.x.ticks,maxTicksLimit:14}}, y:SCALES.y }
@@ -2321,7 +2545,7 @@ function drawPie(body, idx, segs) {
     item.className='legend-item';
     item.style.cssText='cursor:pointer;padding:3px 6px;border-radius:2px;transition:background .15s;';
     item.innerHTML=`<div class="legend-dot" style="background:${s.color}"></div>${escHtml(s.label)}: <strong style="color:var(--text);margin:0 3px;">${data[i].toLocaleString()}</strong><span style="color:var(--muted)">(${pct}%)</span>`;
-    item.addEventListener('click',()=>openMentions(s.label, s.records));
+    item.addEventListener('click',()=>openMentions(s.label, s.records, s.bool||''));
     item.addEventListener('mouseenter',()=>item.style.background='rgba(0,212,180,.06)');
     item.addEventListener('mouseleave',()=>item.style.background='');
     legEl.appendChild(item);
@@ -2338,7 +2562,7 @@ function drawPie(body, idx, segs) {
     data:{ labels:segs.map(s=>s.label), datasets:[{ data, backgroundColor:segs.map(s=>s.color), borderWidth:0 }] },
     options:{
       responsive:true, maintainAspectRatio:false, cutout:'60%',
-      onClick: (_e, els) => { if(els.length) openMentions(segs[els[0].index].label, segs[els[0].index].records); },
+      onClick: (_e, els) => { if(els.length) openMentions(segs[els[0].index].label, segs[els[0].index].records, segs[els[0].index].bool||''); },
       plugins:{ legend:{display:false}, tooltip:{...TOOLTIP, callbacks:{label:ctx=>` ${ctx.raw.toLocaleString()} (${total?((ctx.raw/total)*100).toFixed(1):0}%)`}} }
     }
   });
@@ -2382,7 +2606,7 @@ function drawWordCloud(body, idx, def, segs) {
     span.textContent=word;
     span.title=`${word}: ${recs.length.toLocaleString()} mentions — click to view`;
     span.style.cssText=`font-size:${scale(recs.length)}px;color:${PALETTE[i%PALETTE.length]};opacity:${(0.55+0.45*(recs.length/max)).toFixed(2)};cursor:pointer;`;
-    span.addEventListener('click',()=>openMentions('"'+word+'"', recs));
+    span.addEventListener('click',()=>openMentions('"'+word+'"', recs, '"'+word+'"'));
     wrap.appendChild(span);
   });
   body.appendChild(wrap);
@@ -2395,7 +2619,7 @@ function drawWordCloud(body, idx, def, segs) {
     item.className='legend-item';
     item.style.cssText='cursor:pointer;padding:2px 5px;border-radius:2px;transition:background .15s;';
     item.innerHTML=`<div class="legend-dot" style="background:${PALETTE[i%PALETTE.length]}"></div>${escHtml(w)} <span style="color:var(--muted)">(${recs.length.toLocaleString()})</span>`;
-    item.addEventListener('click',()=>openMentions('"'+w+'"',recs));
+    item.addEventListener('click',()=>openMentions('"'+w+'"',recs,'"'+w+'"'));
     item.addEventListener('mouseenter',()=>item.style.background='rgba(0,212,180,.06)');
     item.addEventListener('mouseleave',()=>item.style.background='');
     legEl.appendChild(item);
