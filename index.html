@@ -165,6 +165,14 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 .session-size-warn{font-size:10px;color:#fcd34d;}
 .reingest-banner{background:rgba(245,158,11,.1);border-bottom:1px solid rgba(245,158,11,.3);padding:8px 20px;display:flex;align-items:center;gap:12px;font-size:12px;color:#fcd34d;}
 .reingest-banner button{flex-shrink:0;}
+/* stacked bar stack builder */
+.stack-group-list{display:flex;flex-direction:column;gap:6px;margin-top:8px;}
+.stack-group-row{display:flex;align-items:center;gap:6px;background:var(--bg);border:1px solid var(--border);border-radius:2px;padding:6px 8px;}
+.stack-group-swatch{width:10px;height:10px;border-radius:50%;flex-shrink:0;}
+.stack-group-label{width:100px;flex-shrink:0;}
+.stack-group-bool{flex:1;}
+.stack-group-del{background:transparent;border:none;color:var(--muted);cursor:pointer;padding:2px 4px;font-size:13px;}
+.stack-group-del:hover{color:var(--neg);}
 
 /* ── SESSION LOAD MODAL ── */
 .session-modal{background:var(--surface);border:1px solid var(--border);border-radius:3px;width:100%;max-width:560px;margin:auto;}
@@ -509,6 +517,25 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
           <option value="entities">Entities</option>
         </select>
       </div>
+      <!-- STACK BY (stacked bar only) -->
+      <div id="m-stack-row" class="form-row hidden">
+        <label>Stack by</label>
+        <select id="m-stack-by" onchange="onStackByChange()">
+          <option value="sentiment">Sentiment (positive / neutral / negative)</option>
+          <option value="source">Source (online news, X, Reddit…)</option>
+          <option value="emotion">Emotion (joy, trust, anger…)</option>
+          <option value="custom">Custom groups (define your own)</option>
+        </select>
+        <!-- Custom group builder -->
+        <div id="m-stack-custom-wrap" class="hidden" style="margin-top:10px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+            <span style="font-size:11px;color:var(--muted);">Define stack layers (each with a label + boolean filter). An "Other" layer catches anything unmatched.</span>
+            <button class="btn btn-ghost btn-xs" onclick="addStackGroup()" style="flex-shrink:0;">＋ Add layer</button>
+          </div>
+          <div class="stack-group-list" id="stack-group-list"></div>
+        </div>
+      </div>
+
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
         <h3>Segments <span style="color:var(--muted);font-weight:400;font-size:11px;">(up to 25)</span></h3>
         <button class="btn btn-ghost btn-sm" onclick="addSegment()">＋ Add segment</button>
@@ -533,10 +560,11 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 // ════════════════════════════════════════════════
 // CONFIG
 // ════════════════════════════════════════════════
-// Netlify Functions — redirects in netlify.toml route /trac and /data here
-const TRAC = '/trac';
-const DATA = '/data';
+const TRAC      = '/trac';
+const DATA      = '/data';
 const PAGE_SIZE = 100;
+const DB_NAME   = 'PulsarAnalytics';
+const DB_VER    = 1;
 const PALETTE = [
   '#00D4B4','#3B82F6','#F59E0B','#EC4899','#8B5CF6',
   '#22c55e','#f97316','#06b6d4','#a855f7','#fb7185',
@@ -551,13 +579,170 @@ const PALETTE = [
 let ST = {
   token: '', allSearches: [], selectedSearches: [],
   dateFrom: '', dateTo: '',
-  records: {},        // { searchId: [TracContent,...] }
-  chartDefs: [],      // chart definitions
-  chartInstances: {}, // Chart.js instances keyed by panel index
+  // records no longer held in memory — all in IndexedDB
+  // ST.recordCounts[searchId] = number of records stored
+  recordCounts: {},
+  chartDefs: [],
+  chartInstances: {},
   modalType: '', editingIdx: null,
   segCount: 0,
-  currentSessionId: null,  // ID of the currently active saved session
+  currentSessionId: null,
 };
+
+// ════════════════════════════════════════════════
+// INDEXEDDB ENGINE
+// ════════════════════════════════════════════════
+let _db = null;
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    if(_db) { resolve(_db); return; }
+    const req = indexedDB.open(DB_NAME, DB_VER);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      if(!db.objectStoreNames.contains('records')) {
+        const store = db.createObjectStore('records', { keyPath: '_iid', autoIncrement: true });
+        store.createIndex('sessionId',  'sessionId',  { unique: false });
+        store.createIndex('searchId',   'searchId',   { unique: false });
+        store.createIndex('publishedAt','publishedAt',{ unique: false });
+        store.createIndex('source',     'source',     { unique: false });
+        store.createIndex('sentiment',  'sentiment',  { unique: false });
+        // Compound index for fast session+search lookup
+        store.createIndex('sessionSearch', ['sessionId','searchId'], { unique: false });
+      }
+    };
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+// Write a batch of records to IndexedDB for a given session+search
+async function dbWriteBatch(sessionId, searchId, records) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction('records', 'readwrite');
+    const store = tx.objectStore('records');
+    records.forEach(r => {
+      store.add({ ...r, sessionId, searchId: String(searchId) });
+    });
+    tx.oncomplete = resolve;
+    tx.onerror    = e => reject(e.target.error);
+  });
+}
+
+// Delete all records for a session
+async function dbClearSession(sessionId) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction('records', 'readwrite');
+    const store = tx.objectStore('records');
+    const idx   = store.index('sessionId');
+    const req   = idx.openCursor(IDBKeyRange.only(sessionId));
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if(cursor) { cursor.delete(); cursor.continue(); }
+    };
+    tx.oncomplete = resolve;
+    tx.onerror    = e => reject(e.target.error);
+  });
+}
+
+// Count records for a session (optional search filter)
+async function dbCount(sessionId, searchId = null) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx    = db.transaction('records', 'readonly');
+    const store = tx.objectStore('records');
+    let req;
+    if(searchId) {
+      req = store.index('sessionSearch').count(IDBKeyRange.only([sessionId, String(searchId)]));
+    } else {
+      req = store.index('sessionId').count(IDBKeyRange.only(sessionId));
+    }
+    req.onsuccess = e => resolve(e.target.result);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+// Core query: get all records for session matching filter, applying boolean+field filters
+// Reads from IndexedDB in chunks, filters in JS, returns full matching array
+async function dbQuery(sessionId, filter = {}) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const results = [];
+    const tx      = db.transaction('records', 'readonly');
+    const store   = tx.objectStore('records');
+
+    // Use searchId index if filtering to specific searches, else session index
+    let req;
+    if(filter.searchIds && filter.searchIds.length && !filter.searchIds.includes('all')) {
+      // Multiple searches: open cursor per searchId and merge
+      // We'll use sessionId index and filter searchId in JS for simplicity
+      req = store.index('sessionId').openCursor(IDBKeyRange.only(sessionId));
+    } else {
+      req = store.index('sessionId').openCursor(IDBKeyRange.only(sessionId));
+    }
+
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if(!cursor) { resolve(results); return; }
+      const r = cursor.value;
+
+      // Apply all filters in JS
+      if(passesFilter(r, filter)) results.push(r);
+      cursor.continue();
+    };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// Fast total count for a session (no filtering)
+async function dbTotalCount(sessionId) {
+  return dbCount(sessionId);
+}
+
+// Get unique values for a field (for feed source dropdown etc.)
+async function dbDistinct(sessionId, field) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const seen    = new Set();
+    const tx      = db.transaction('records', 'readonly');
+    const store   = tx.objectStore('records');
+    const req     = store.index('sessionId').openCursor(IDBKeyRange.only(sessionId));
+    req.onsuccess = e => {
+      const cursor = e.target.result;
+      if(!cursor) { resolve([...seen].filter(Boolean).sort()); return; }
+      const val = cursor.value[field];
+      if(val) seen.add(val);
+      cursor.continue();
+    };
+    req.onerror = e => reject(e.target.error);
+  });
+}
+
+// ── UNIFIED FILTER FUNCTION (runs on each record) ──
+function passesFilter(r, filter) {
+  // Search filter
+  if(filter.searchIds && filter.searchIds.length && !filter.searchIds.includes('all')) {
+    if(!filter.searchIds.includes(String(r.searchId))) return false;
+  }
+  // Date range
+  if(filter.dateFrom && r.publishedAt && r.publishedAt < filter.dateFrom) return false;
+  if(filter.dateTo   && r.publishedAt && r.publishedAt > filter.dateTo+'T23:59:59Z') return false;
+  // Boolean keyword
+  if(filter.bool && filter.bool.trim() && !boolMatch(filter.bool, getRecordText(r))) return false;
+  // Sentiment
+  if(filter.sentiment && filter.sentiment !== 'any' && sentimentLabel(r) !== filter.sentiment) return false;
+  // Domain/URL
+  if(filter.domain && filter.domain.trim()) {
+    const terms = filter.domain.split(',').map(t=>t.trim().toLowerCase()).filter(Boolean);
+    const hay   = ((r.domainName||'')+(r.url||'')).toLowerCase();
+    if(!terms.some(t => hay.includes(t))) return false;
+  }
+  // Source
+  if(filter.source && r.source !== filter.source) return false;
+  return true;
+}
 
 // ════════════════════════════════════════════════
 // HELPERS
@@ -621,9 +806,7 @@ function fmtSource(s) {
   return (s||'').replace(/_/g,' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
 }
 
-function getAllRecords() {
-  return Object.values(ST.records).flat();
-}
+// getAllRecords() removed — use dbQuery(sessionId) instead
 
 // ════════════════════════════════════════════════
 // SCREEN 1: SETUP
@@ -740,7 +923,7 @@ function updateSelCount() {
 }
 
 function backToSetup() {
-  ST.records = {}; ST.chartDefs = [];
+  ST.recordCounts = {}; ST.chartDefs = [];
   ST.currentSessionId = null;
   Object.values(ST.chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
   ST.chartInstances = {};
@@ -751,7 +934,7 @@ function backToSetup() {
 // ════════════════════════════════════════════════
 // INGEST: paginate all results
 // ════════════════════════════════════════════════
-// Shared core ingest engine — used by both fresh ingest and session re-ingest
+// Shared core ingest engine — writes directly to IndexedDB
 const RESULTS_Q = `
   query($filter: FilterInput!, $options: ResultsOptionsInput) {
     results(filter: $filter, options: $options) {
@@ -766,21 +949,25 @@ const RESULTS_Q = `
   }
 `;
 
-async function runIngest(searches, dateFrom, dateTo, onSuccess, onError) {
+async function runIngest(sessionId, searches, dateFrom, dateTo, onSuccess, onError) {
   showScreen('screen-progress');
   $('prog-log').innerHTML = '';
   setProgress(0, 'Starting...', 0);
 
-  const dfISO = dateFrom + 'T00:00:00Z';
-  const dtISO = dateTo   + 'T23:59:59Z';
-  const total  = searches.length;
+  // Clear any existing records for this session
+  progLog('Clearing previous data...');
+  await dbClearSession(sessionId);
+
+  const dfISO    = dateFrom + 'T00:00:00Z';
+  const dtISO    = dateTo   + 'T23:59:59Z';
+  const total    = searches.length;
   let grandTotal = 0;
+  ST.recordCounts = {};
 
   try {
     for(let si = 0; si < searches.length; si++) {
       const s = searches[si];
-      ST.records[s.id] = [];
-      let cursor = null, page = 0, searchTotal = null;
+      let cursor = null, page = 0, searchTotal = null, searchCount = 0;
       progLog('Starting: ' + s.name);
 
       while(true) {
@@ -788,24 +975,33 @@ async function runIngest(searches, dateFrom, dateTo, onSuccess, onError) {
           filter: { searchIds: [s.searchHash || String(s.id)], dateFrom: dfISO, dateTo: dtISO },
           options: { limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) }
         };
-        const data = await gql(DATA, RESULTS_Q, vars);
-        const res  = data.results;
+        const data  = await gql(DATA, RESULTS_Q, vars);
+        const res   = data.results;
         if(searchTotal === null) searchTotal = res.total || 0;
         const batch = res.results || [];
-        ST.records[s.id].push(...batch);
-        grandTotal += batch.length;
+
+        // Write batch to IndexedDB immediately — not held in memory
+        if(batch.length) await dbWriteBatch(sessionId, s.id, batch);
+
+        searchCount  += batch.length;
+        grandTotal   += batch.length;
         page++;
 
-        const sp = searchTotal > 0 ? Math.min(ST.records[s.id].length / searchTotal, 1) : 1;
-        setProgress(((si + sp) / total) * 100,
-          `${s.name} — page ${page} (${fmt(ST.records[s.id].length)} / ${fmt(searchTotal)})`,
-          grandTotal);
+        const sp = searchTotal > 0 ? Math.min(searchCount / searchTotal, 1) : 1;
+        setProgress(
+          ((si + sp) / total) * 100,
+          `${s.name} — page ${page} (${fmt(searchCount)} / ${fmt(searchTotal)})`,
+          grandTotal
+        );
 
         if(!res.nextCursor || batch.length === 0) break;
         cursor = res.nextCursor;
       }
-      progLog(`Done: ${s.name} — ${fmt(ST.records[s.id].length)} records`);
+
+      ST.recordCounts[s.id] = searchCount;
+      progLog(`Done: ${s.name} — ${fmt(searchCount)} records`);
     }
+
     setProgress(100, 'Complete!', grandTotal);
     setTimeout(onSuccess, 700);
   } catch(e) {
@@ -822,20 +1018,22 @@ async function doIngest() {
   if(new Date(from) >= new Date(to)) return showErr('s2-error', 'Start date must be before end date.');
   ST.dateFrom = from; ST.dateTo = to;
 
+  // Generate a session ID for this ingest if we don't have one
+  if(!ST.currentSessionId) ST.currentSessionId = 's_' + Date.now();
+  const sessionId = ST.currentSessionId;
+
   await runIngest(
-    ST.selectedSearches, from, to,
+    sessionId, ST.selectedSearches, from, to,
     () => showAnalytics(),
     (e) => { showScreen('screen-ingest'); showErr('s2-error', 'Ingest failed: ' + e.message); }
   );
 }
 
-// Called when loading a session that has no saved records
+// Called when loading a session — re-ingests data into IndexedDB
 async function reIngestSession() {
   if(!ST.selectedSearches.length || !ST.dateFrom || !ST.dateTo) {
     alert('No session loaded — cannot re-ingest.'); return;
   }
-
-  // Require a token — prompt if not set
   if(!ST.token) {
     const token = prompt('Enter your Pulsar API token to re-ingest data:');
     if(!token) return;
@@ -843,38 +1041,35 @@ async function reIngestSession() {
   }
 
   const sessionId = ST.currentSessionId;
-  const chartDefs = [...ST.chartDefs]; // keep charts
-  ST.records = {};
+  const chartDefs = [...ST.chartDefs];
+  ST.recordCounts = {};
 
   await runIngest(
-    ST.selectedSearches, ST.dateFrom, ST.dateTo,
-    () => {
-      // Back to analytics with charts restored
+    sessionId, ST.selectedSearches, ST.dateFrom, ST.dateTo,
+    async () => {
       showAnalytics();
       $('session-name-input').value = sessionId
         ? (JSON.parse(localStorage.getItem(SESSION_PREFIX + sessionId) || '{}').name || '')
         : '';
 
-      // Remount charts
       const main = $('main-area');
       main.innerHTML = '<div data-placeholder style="color:var(--muted);font-size:13px;text-align:center;padding:60px 0;">Use the sidebar to add your first chart.</div>';
       Object.values(ST.chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
       ST.chartInstances = {};
       ST.chartDefs = chartDefs;
-      ST.chartDefs.forEach((def, idx) => {
-        if(!def) return;
+
+      // Redraw charts — they now query IndexedDB for data
+      for(let idx = 0; idx < ST.chartDefs.length; idx++) {
+        const def = ST.chartDefs[idx];
+        if(!def) continue;
         mountChartPanel(def, idx);
-        drawChart(def, idx);
-      });
+        await drawChart(def, idx);
+      }
 
-      // Hide the reingest banner
       $('reingest-banner').classList.add('hidden');
-
-      // Auto-save with records now that we have them
       if(sessionId) saveSession();
     },
     (e) => {
-      // On error go back to analytics with charts still intact
       showAnalytics();
       ST.chartDefs = chartDefs;
       alert('Re-ingest failed: ' + e.message);
@@ -885,42 +1080,48 @@ async function reIngestSession() {
 // ════════════════════════════════════════════════
 // SCREEN 4: ANALYTICS
 // ════════════════════════════════════════════════
-function showAnalytics() {
+async function showAnalytics() {
   showScreen('screen-analytics');
-  // Hide reingest banner on fresh ingest
   const banner = $('reingest-banner');
   if(banner) banner.classList.add('hidden');
-  const all   = getAllRecords();
-  const total = all.length;
 
-  $('st-total').textContent    = fmt(total);
-  $('st-searches').textContent = ST.selectedSearches.length;
-  $('st-range').textContent    = ST.dateFrom + ' → ' + ST.dateTo;
+  const sessionId = ST.currentSessionId;
+  const total     = sessionId ? await dbTotalCount(sessionId) : 0;
+
+  $('st-total').textContent         = fmt(total);
+  $('st-searches').textContent      = ST.selectedSearches.length;
+  $('st-range').textContent         = ST.dateFrom + ' → ' + ST.dateTo;
   $('top-record-count').textContent = fmt(total) + ' records';
   $('top-date-range').textContent   = ST.dateFrom + ' to ' + ST.dateTo;
 
   const days = Math.round((new Date(ST.dateTo) - new Date(ST.dateFrom)) / 86400000);
   $('st-days').textContent = days + ' days';
 
-  const srcCounts = {};
-  all.forEach(r => { const s = r.source || 'unknown'; srcCounts[s] = (srcCounts[s]||0) + 1; });
-  const top = Object.entries(srcCounts).sort((a,b) => b[1]-a[1])[0];
-  if(top) $('st-source').textContent = fmtSource(top[0]);
+  // Top source — query IndexedDB
+  if(sessionId) {
+    const allRecs = await dbQuery(sessionId, {});
+    const srcCounts = {};
+    allRecs.forEach(r => { const s = r.source||'unknown'; srcCounts[s]=(srcCounts[s]||0)+1; });
+    const top = Object.entries(srcCounts).sort((a,b)=>b[1]-a[1])[0];
+    if(top) $('st-source').textContent = fmtSource(top[0]);
+  }
 
   setupFeed();
 
+  // Sidebar search list with record counts from IndexedDB
   const sbEl = $('sb-searches');
   sbEl.innerHTML = '';
-  ST.selectedSearches.forEach((s, i) => {
-    const recs = ST.records[s.id] || [];
-    const div  = document.createElement('div');
+  for(let i = 0; i < ST.selectedSearches.length; i++) {
+    const s     = ST.selectedSearches[i];
+    const count = sessionId ? (ST.recordCounts[s.id] || await dbCount(sessionId, s.id)) : 0;
+    const div   = document.createElement('div');
     div.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;';
     div.innerHTML = `
       <div style="width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};flex-shrink:0;"></div>
       <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${s.name}">${s.name}</span>
-      <span style="color:var(--muted);font-size:10px;font-family:var(--mono);">${fmt(recs.length)}</span>`;
+      <span style="color:var(--muted);font-size:10px;font-family:var(--mono);">${fmt(count)}</span>`;
     sbEl.appendChild(div);
-  });
+  }
 }
 
 // ════════════════════════════════════════════════
@@ -1022,16 +1223,20 @@ function applyFilter(records, filter) {
 }
 
 // ════════════════════════════════════════════════
-// SEGMENT RESOLUTION
+// SEGMENT RESOLUTION (async — queries IndexedDB)
 // ════════════════════════════════════════════════
-function resolveSegment(seg) {
-  let pool;
-  if(!seg.searchIds || seg.searchIds.includes('all') || !seg.searchIds.length) {
-    pool = getAllRecords();
-  } else {
-    pool = seg.searchIds.flatMap(id => ST.records[id] || []);
-  }
-  return applyFilter(pool, { bool: seg.bool, sentiment: seg.sentiment, domain: seg.domain });
+async function resolveSegment(seg) {
+  const sessionId = ST.currentSessionId;
+  if(!sessionId) return [];
+  const searchIds = (!seg.searchIds || seg.searchIds.includes('all') || !seg.searchIds.length)
+    ? ['all']
+    : seg.searchIds.map(String);
+  return dbQuery(sessionId, {
+    searchIds,
+    bool:      seg.bool,
+    sentiment: seg.sentiment,
+    domain:    seg.domain,
+  });
 }
 
 // ════════════════════════════════════════════════
@@ -1046,18 +1251,29 @@ function openChartModal(type, editIdx = null) {
   $('segment-list').innerHTML = '';
   $('m-gran-row').classList.add('hidden');
   $('m-wc-row').classList.add('hidden');
+  $('m-stack-row').classList.add('hidden');
+  $('m-stack-custom-wrap').classList.add('hidden');
+  $('stack-group-list').innerHTML = '';
 
   const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud' };
   $('modal-title').textContent = titles[type] || 'Chart';
 
-  if(type === 'line')      $('m-gran-row').classList.remove('hidden');
-  if(type === 'wordcloud') $('m-wc-row').classList.remove('hidden');
+  if(type === 'line')         $('m-gran-row').classList.remove('hidden');
+  if(type === 'wordcloud')    $('m-wc-row').classList.remove('hidden');
+  if(type === 'stacked-bar')  $('m-stack-row').classList.remove('hidden');
 
   if(editIdx !== null) {
     const def = ST.chartDefs[editIdx];
     $('m-title').value = def.title || '';
-    if(def.granularity) $('m-gran').value     = def.granularity;
-    if(def.wcField)     $('m-wc-field').value = def.wcField;
+    if(def.granularity) $('m-gran').value      = def.granularity;
+    if(def.wcField)     $('m-wc-field').value  = def.wcField;
+    if(def.stackBy)   {
+      $('m-stack-by').value = def.stackBy;
+      onStackByChange();
+      if(def.stackBy === 'custom' && def.stackGroups) {
+        def.stackGroups.forEach(g => addStackGroup(g));
+      }
+    }
     // Restore width radio
     const wval = def.width || 'full';
     const wRadio = document.querySelector(`input[name="m-width"][value="${wval}"]`);
@@ -1162,6 +1378,8 @@ function buildChart() {
     granularity: $('m-gran').value,
     wcField:     $('m-wc-field').value,
     width:       selectedWidth,
+    stackBy:     $('m-stack-by').value,
+    stackGroups: readStackGroups(),
   };
   closeModal();
 
@@ -1172,7 +1390,7 @@ function buildChart() {
   } else {
     const idx = ST.chartDefs.push(def) - 1;
     mountChartPanel(def, idx);
-    drawChart(def, idx);
+    await drawChart(def, idx);
   }
   autoSaveCharts();
 }
@@ -1213,7 +1431,7 @@ function setChartWidth(idx, width) {
   btns[1].classList.toggle('active', width === 'full');
 }
 
-function reDrawChart(idx) {
+async function reDrawChart(idx) {
   const def   = ST.chartDefs[idx];
   const panel = document.querySelector(`[data-chart-idx="${idx}"]`);
   if(!panel) return;
@@ -1222,7 +1440,7 @@ function reDrawChart(idx) {
   const body = $('cpb-'+idx);
   body.innerHTML = '';
   if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} delete ST.chartInstances[idx]; }
-  drawChart(def, idx);
+  await drawChart(def, idx);
 }
 
 function removeChart(idx) {
@@ -1237,13 +1455,22 @@ function removeChart(idx) {
   autoSaveCharts();
 }
 
-function drawChart(def, idx) {
+async function drawChart(def, idx) {
   const body = $('cpb-'+idx);
   if(!body) return;
-  const segs = def.segments.map(s => ({ ...s, records: resolveSegment(s) }));
+
+  // Show loading state while querying IndexedDB
+  body.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:20px;color:var(--muted);font-size:12px;"><div class="spinner"></div>Querying data...</div>';
+
+  // Resolve all segments in parallel from IndexedDB
+  const segs = await Promise.all(
+    def.segments.map(async s => ({ ...s, records: await resolveSegment(s) }))
+  );
+
+  body.innerHTML = '';
   switch(def.type) {
     case 'bar':         drawBar(body, idx, segs); break;
-    case 'stacked-bar': drawStackedBar(body, idx, segs); break;
+    case 'stacked-bar': drawStackedBar(body, idx, def, segs); break;
     case 'line':        drawLine(body, idx, def, segs); break;
     case 'pie':         drawPie(body, idx, segs); break;
     case 'wordcloud':   drawWordCloud(body, idx, def, segs); break;
@@ -1262,64 +1489,47 @@ function getAllSessionMeta() {
   catch(e) { return []; }
 }
 
-function saveSession() {
+async function saveSession() {
   const name = $('session-name-input').value.trim() || ('Session ' + new Date().toLocaleDateString('en-GB'));
   const id   = ST.currentSessionId || ('s_' + Date.now());
   ST.currentSessionId = id;
 
-  // Build the session object
+  // Records live in IndexedDB — session only stores metadata + charts
+  const total = await dbTotalCount(id);
+
   const session = {
     id,
     name,
     savedAt:    new Date().toISOString(),
     dateFrom:   ST.dateFrom,
     dateTo:     ST.dateTo,
-    searches:   ST.selectedSearches.map(s => ({ id: s.id, name: s.name, searchHash: s.searchHash, totalContents: s.totalContents })),
+    searches:   ST.selectedSearches.map(s => ({ id: s.id, name: s.name, searchHash: s.searchHash, totalContents: s.totalContents, status: s.status })),
     chartDefs:  ST.chartDefs.filter(Boolean),
-    token:      '', // never save the token
+    recordCount: total,
+    hasRecords:  total > 0,
+    token:       '', // never save the token
   };
 
-  // Try to save records too — check size first
-  const recordsJson = JSON.stringify(ST.records);
-  const recordsKB   = Math.round(recordsJson.length / 1024);
-  const warnEl      = $('session-size-warn');
-
-  let savedRecords = false;
-  if(recordsKB < 3500) { // stay under 5MB limit with headroom
-    try {
-      localStorage.setItem(SESSION_PREFIX + id + '_records', recordsJson);
-      savedRecords = true;
-      warnEl.textContent = '';
-    } catch(e) {
-      warnEl.textContent = '⚠ Dataset too large to save records (' + recordsKB + 'KB) — charts saved only';
-    }
-  } else {
-    warnEl.textContent = '⚠ Dataset too large to save (' + recordsKB + 'KB) — charts saved only';
-    // Clean up any old records for this session
-    try { localStorage.removeItem(SESSION_PREFIX + id + '_records'); } catch(e){}
-  }
-
-  session.hasRecords = savedRecords;
-
-  // Save session meta
   try {
     localStorage.setItem(SESSION_PREFIX + id, JSON.stringify(session));
   } catch(e) {
-    alert('Could not save session: storage may be full. Try deleting old sessions.');
+    alert('Could not save session metadata: ' + e.message);
     return;
   }
 
   // Update index
   let index = getAllSessionMeta().filter(s => s.id !== id);
-  index.unshift({ id, name, savedAt: session.savedAt, dateFrom: ST.dateFrom, dateTo: ST.dateTo, searches: session.searches.length, hasRecords: savedRecords });
+  index.unshift({ id, name, savedAt: session.savedAt, dateFrom: ST.dateFrom, dateTo: ST.dateTo, searches: session.searches.length, hasRecords: session.hasRecords, recordCount: total });
   if(index.length > MAX_SESSIONS) index = index.slice(0, MAX_SESSIONS);
   try { localStorage.setItem(SESSION_INDEX_KEY, JSON.stringify(index)); } catch(e){}
 
-  // Flash indicator
+  $('session-size-warn').textContent = total > 0
+    ? ''
+    : '⚠ No record data found — re-ingest before saving';
+
   const ind = $('save-indicator');
   ind.classList.add('show');
   setTimeout(() => ind.classList.remove('show'), 2000);
-
   $('session-name-input').value = name;
 }
 
@@ -1341,12 +1551,14 @@ function openSessionsModal() {
     row.className = 'saved-session-row';
 
     const savedDate = new Date(s.savedAt).toLocaleDateString('en-GB', {day:'numeric', month:'short', year:'numeric', hour:'2-digit', minute:'2-digit'});
-    const hasRec    = s.hasRecords ? '✓ data + charts' : 'charts only';
+    const recInfo = s.hasRecords
+      ? `✓ ${s.recordCount ? fmt(s.recordCount)+' records' : 'data'} in browser`
+      : '⚠ No local data — will auto re-ingest on load';
 
     row.innerHTML = `
       <div class="saved-session-info">
         <div class="saved-session-name">${escHtml(s.name)}</div>
-        <div class="saved-session-meta">${s.searches} search${s.searches!==1?'es':''} · ${s.dateFrom} to ${s.dateTo} · ${hasRec} · Saved ${savedDate}</div>
+        <div class="saved-session-meta">${s.searches} search${s.searches!==1?'es':''} · ${s.dateFrom} to ${s.dateTo} · ${recInfo} · Saved ${savedDate}</div>
       </div>
       <div class="saved-session-actions">
         <button class="btn btn-ghost btn-sm" onclick="loadSession('${s.id}')">Load</button>
@@ -1373,71 +1585,99 @@ function closeSessionsModal() {
 
 async function loadSession(id) {
   closeSessionsModal();
-
   try {
     const raw = localStorage.getItem(SESSION_PREFIX + id);
     if(!raw) { alert('Session not found — it may have been cleared.'); return; }
     const session = JSON.parse(raw);
 
-    // Restore state
-    ST.dateFrom          = session.dateFrom;
-    ST.dateTo            = session.dateTo;
-    ST.selectedSearches  = session.searches || [];
-    ST.chartDefs         = session.chartDefs || [];
-    ST.currentSessionId  = id;
+    ST.dateFrom         = session.dateFrom;
+    ST.dateTo           = session.dateTo;
+    ST.selectedSearches = session.searches || [];
+    ST.chartDefs        = session.chartDefs || [];
+    ST.currentSessionId = id;
+    ST.recordCounts     = {};
 
-    // Restore records if saved
-    const recRaw = localStorage.getItem(SESSION_PREFIX + id + '_records');
-    if(recRaw) {
-      ST.records = JSON.parse(recRaw);
-    } else {
-      ST.records = {};
-      // Build empty records keyed by search id so the app doesn't crash
-      ST.selectedSearches.forEach(s => { ST.records[s.id] = []; });
-    }
+    // Check if records exist in IndexedDB for this session
+    const dbRecordCount = await dbTotalCount(id);
+    const hasData       = dbRecordCount > 0;
 
-    // Show analytics screen
-    showScreen('screen-analytics');
-    showAnalytics();
-
-    // Restore session name
+    // Restore UI
+    await showAnalytics();
     $('session-name-input').value = session.name;
 
-    // Redraw all charts
+    // Remount charts
     const main = $('main-area');
     main.innerHTML = '<div data-placeholder style="color:var(--muted);font-size:13px;text-align:center;padding:60px 0;">Use the sidebar to add your first chart.</div>';
-
-    // Destroy old chart instances
     Object.values(ST.chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
     ST.chartInstances = {};
 
-    // Remount all charts
-    ST.chartDefs.forEach((def, idx) => {
-      if(!def) return;
-      mountChartPanel(def, idx);
-      drawChart(def, idx);
-    });
-
-    // Show/hide the reingest banner
-    if(!session.hasRecords) {
-      $('reingest-banner').classList.remove('hidden');
-    } else {
+    if(hasData) {
+      // Data is in IndexedDB — draw charts immediately
       $('reingest-banner').classList.add('hidden');
+      for(let idx = 0; idx < ST.chartDefs.length; idx++) {
+        const def = ST.chartDefs[idx];
+        if(!def) continue;
+        mountChartPanel(def, idx);
+        await drawChart(def, idx);
+      }
+    } else {
+      // No data in IndexedDB — auto-reingest in background
+      $('reingest-banner').classList.remove('hidden');
+      progLog('No local data found — starting automatic re-ingest...');
+
+      if(!ST.token) {
+        const token = prompt('Enter your Pulsar API token to load session data:');
+        if(!token) {
+          // User cancelled — show banner, mount empty charts
+          ST.chartDefs.forEach((def, idx) => { if(def) mountChartPanel(def, idx); });
+          return;
+        }
+        ST.token = token;
+      }
+
+      // Auto-reingest silently
+      await runIngest(
+        id, ST.selectedSearches, ST.dateFrom, ST.dateTo,
+        async () => {
+          await showAnalytics();
+          $('session-name-input').value = session.name;
+          $('reingest-banner').classList.add('hidden');
+
+          const main2 = $('main-area');
+          main2.innerHTML = '<div data-placeholder style="color:var(--muted);font-size:13px;text-align:center;padding:60px 0;">Use the sidebar to add your first chart.</div>';
+          Object.values(ST.chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
+          ST.chartInstances = {};
+
+          for(let idx = 0; idx < ST.chartDefs.length; idx++) {
+            const def = ST.chartDefs[idx];
+            if(!def) continue;
+            mountChartPanel(def, idx);
+            await drawChart(def, idx);
+          }
+          saveSession();
+        },
+        (e) => {
+          showAnalytics();
+          $('reingest-banner').classList.remove('hidden');
+          alert('Auto re-ingest failed: ' + e.message + '\nUse the "Re-ingest data now" button to try again.');
+          // Mount charts without data
+          ST.chartDefs.forEach((def, idx) => { if(def) mountChartPanel(def, idx); });
+        }
+      );
     }
   } catch(e) {
     alert('Failed to load session: ' + e.message);
   }
 }
 
-function deleteSession(id, btn) {
-  if(!confirm('Delete this saved session?')) return;
+async function deleteSession(id, btn) {
+  if(!confirm('Delete this saved session? This will also remove its stored data.')) return;
   try {
     localStorage.removeItem(SESSION_PREFIX + id);
-    localStorage.removeItem(SESSION_PREFIX + id + '_records');
     const index = getAllSessionMeta().filter(s => s.id !== id);
     localStorage.setItem(SESSION_INDEX_KEY, JSON.stringify(index));
+    await dbClearSession(id); // remove from IndexedDB too
   } catch(e){}
-  // Remove row from UI
   btn.closest('.saved-session-row').remove();
   if(!$('saved-session-list').children.length) {
     $('no-sessions-msg').classList.remove('hidden');
@@ -1450,11 +1690,12 @@ function autoSaveCharts() {
   const raw = localStorage.getItem(SESSION_PREFIX + ST.currentSessionId);
   if(!raw) return;
   try {
-    const session = JSON.parse(raw);
+    const session    = JSON.parse(raw);
     session.chartDefs = ST.chartDefs.filter(Boolean);
     localStorage.setItem(SESSION_PREFIX + ST.currentSessionId, JSON.stringify(session));
-    // Update index
-    const index = getAllSessionMeta().map(s => s.id === ST.currentSessionId ? {...s, name: session.name} : s);
+    const index = getAllSessionMeta().map(s =>
+      s.id === ST.currentSessionId ? { ...s, name: session.name } : s
+    );
     localStorage.setItem(SESSION_INDEX_KEY, JSON.stringify(index));
   } catch(e){}
 }
@@ -1488,7 +1729,7 @@ function debounceFeed() {
 // ════════════════════════════════════════════════
 // FEED SETUP (called when analytics screen loads)
 // ════════════════════════════════════════════════
-function setupFeed() {
+async function setupFeed() {
   // Populate search selector
   const sel = $('feed-search-sel');
   sel.innerHTML = '<option value="all">All searches</option>';
@@ -1498,17 +1739,19 @@ function setupFeed() {
     sel.appendChild(opt);
   });
 
-  // Populate source selector from ingested data
-  const sources = [...new Set(getAllRecords().map(r => r.source).filter(Boolean))].sort();
-  const srcSel = $('feed-source');
-  srcSel.innerHTML = '<option value="">All sources</option>';
-  sources.forEach(s => {
-    const opt = document.createElement('option');
-    opt.value = s; opt.textContent = fmtSource(s);
-    srcSel.appendChild(opt);
-  });
+  // Populate source selector from IndexedDB
+  const sessionId = ST.currentSessionId;
+  if(sessionId) {
+    const sources = await dbDistinct(sessionId, 'source');
+    const srcSel  = $('feed-source');
+    srcSel.innerHTML = '<option value="">All sources</option>';
+    sources.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s; opt.textContent = fmtSource(s);
+      srcSel.appendChild(opt);
+    });
+  }
 
-  // Set date range defaults to match ingest range
   $('feed-date-from').value = ST.dateFrom;
   $('feed-date-to').value   = ST.dateTo;
 
@@ -1530,7 +1773,10 @@ function resetFeedFilters() {
 // ════════════════════════════════════════════════
 // FEED FILTERING
 // ════════════════════════════════════════════════
-function applyFeedFilters() {
+async function applyFeedFilters() {
+  const sessionId = ST.currentSessionId;
+  if(!sessionId) return;
+
   const searchId  = $('feed-search-sel').value;
   const dateFrom  = $('feed-date-from').value;
   const dateTo    = $('feed-date-to').value;
@@ -1540,33 +1786,18 @@ function applyFeedFilters() {
   const source    = $('feed-source').value;
   const sort      = $('feed-sort').value;
 
-  // Get pool
-  let pool = searchId === 'all' ? getAllRecords() : (ST.records[searchId] || []);
+  $('feed-main').innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:30px;color:var(--muted);font-size:12px;"><div class="spinner"></div>Filtering...</div>';
 
-  // Date filter
-  if(dateFrom) pool = pool.filter(r => r.publishedAt && r.publishedAt >= dateFrom);
-  if(dateTo)   pool = pool.filter(r => r.publishedAt && r.publishedAt <= dateTo + 'T23:59:59Z');
+  const filter = {
+    searchIds: searchId === 'all' ? ['all'] : [String(searchId)],
+    dateFrom, dateTo, bool, sentiment, domain, source,
+  };
 
-  // Boolean
-  if(bool.trim()) pool = pool.filter(r => boolMatch(bool, getRecordText(r)));
-
-  // Sentiment
-  if(sentiment && sentiment !== 'any') pool = pool.filter(r => sentimentLabel(r) === sentiment);
-
-  // Domain
-  if(domain.trim()) {
-    const terms = domain.split(',').map(t => t.trim().toLowerCase()).filter(Boolean);
-    pool = pool.filter(r => {
-      const hay = ((r.domainName||'') + ' ' + (r.url||'')).toLowerCase();
-      return terms.some(t => hay.includes(t));
-    });
-  }
-
-  // Source
-  if(source) pool = pool.filter(r => r.source === source);
+  // Query IndexedDB
+  let pool = await dbQuery(sessionId, filter);
 
   // Sort
-  pool = [...pool].sort((a, b) => {
+  pool.sort((a, b) => {
     if(sort === 'newest')      return new Date(b.publishedAt||0) - new Date(a.publishedAt||0);
     if(sort === 'oldest')      return new Date(a.publishedAt||0) - new Date(b.publishedAt||0);
     if(sort === 'engagement')  return (b.engagement||0) - (a.engagement||0);
@@ -1575,7 +1806,7 @@ function applyFeedFilters() {
   });
 
   feedState.filtered = pool;
-  feedState.page = 0;
+  feedState.page     = 0;
   renderFeed();
 }
 
@@ -1599,11 +1830,9 @@ function renderFeed() {
     return;
   }
 
-  // Find which search each record belongs to (for the search tag)
+  // Build searchId→name lookup (searchId is stored on each record by dbWriteBatch)
   const searchMap = {};
-  ST.selectedSearches.forEach(s => {
-    (ST.records[s.id] || []).forEach(r => { searchMap[r.url || r.title || r.pulsarId] = s.name; });
-  });
+  ST.selectedSearches.forEach(s => { searchMap[String(s.id)] = s.name; });
 
   visible.forEach(rec => {
     const card = buildFeedCard(rec, searchMap);
@@ -1635,7 +1864,7 @@ function buildFeedCard(rec, searchMap) {
   const src      = fmtSource(rec.source || '');
   const topics   = Array.isArray(rec.topics) ? rec.topics.slice(0, 5) : [];
   const entities = Array.isArray(rec.entities) ? rec.entities.slice(0, 3) : [];
-  const searchName = searchMap[rec.url || rec.title] || '';
+  const searchName = searchMap[String(rec.searchId)] || '';
 
   // Wrap whole card in an <a> if URL exists, otherwise a div
   const card = document.createElement(rec.url ? 'a' : 'div');
@@ -1825,67 +2054,186 @@ function drawBar(body, idx, segs) {
 }
 
 // ── STACKED BAR ──
-function drawStackedBar(body, idx, segs) {
-  const canvas = mkCanvas(body, 260);
+// ── STACK BUILDER HELPERS ──
+const STACK_PALETTE = ['#00D4B4','#3B82F6','#F59E0B','#EC4899','#8B5CF6','#22c55e','#f97316','#06b6d4','#a855f7','#fb7185'];
 
-  // Build per-sentiment datasets; also store records per seg per sentiment for drill-down
-  const posRecs=[], neuRecs=[], negRecs=[];
-  const posD=[], neuD=[], negD=[];
-  segs.forEach(s => {
-    const pos=[], neu=[], neg=[];
-    s.records.forEach(r => {
-      const l = sentimentLabel(r);
-      if(l==='positive') pos.push(r); else if(l==='negative') neg.push(r); else neu.push(r);
+function onStackByChange() {
+  const val = $('m-stack-by').value;
+  const wrap = $('m-stack-custom-wrap');
+  if(val === 'custom') { wrap.classList.remove('hidden'); }
+  else { wrap.classList.add('hidden'); }
+}
+
+function addStackGroup(prefill = null) {
+  const list = $('stack-group-list');
+  const i     = list.children.length;
+  const color = STACK_PALETTE[i % STACK_PALETTE.length];
+  const row   = document.createElement('div');
+  row.className = 'stack-group-row';
+  row.innerHTML = `
+    <div class="stack-group-swatch" style="background:${color};"></div>
+    <input type="text" class="stack-group-label" placeholder="Layer ${i+1}" value="${prefill?.label||''}" style="width:100px;flex-shrink:0;" />
+    <input type="text" class="stack-group-bool" placeholder='Boolean filter e.g. "Series A" OR "seed round"' value="${prefill?.bool||''}" />
+    <button class="stack-group-del" onclick="this.closest('.stack-group-row').remove()" title="Remove">✕</button>`;
+  list.appendChild(row);
+}
+
+function readStackGroups() {
+  return Array.from(document.querySelectorAll('#stack-group-list .stack-group-row')).map((row, i) => ({
+    label: row.querySelector('.stack-group-label').value || ('Layer '+(i+1)),
+    bool:  row.querySelector('.stack-group-bool').value  || '',
+    color: STACK_PALETTE[i % STACK_PALETTE.length],
+  }));
+}
+
+// Build stack layer definitions from a def object
+function resolveStackLayers(def) {
+  const by = def.stackBy || 'sentiment';
+  if(by === 'sentiment') return [
+    { label:'Positive', color:'#22c55e', match: r => sentimentLabel(r) === 'positive' },
+    { label:'Neutral',  color:'#94a3b8', match: r => sentimentLabel(r) === 'neutral'  },
+    { label:'Negative', color:'#ef4444', match: r => sentimentLabel(r) === 'negative' },
+  ];
+  if(by === 'source') {
+    // Collect all unique sources across all segments
+    const sources = [...new Set(getAllRecords().map(r => r.source).filter(Boolean))].sort();
+    return sources.map((s, i) => ({
+      label: fmtSource(s),
+      color: STACK_PALETTE[i % STACK_PALETTE.length],
+      match: r => r.source === s,
+    }));
+  }
+  if(by === 'emotion') {
+    const EMOTIONS = ['joy','trust','anticipation','surprise','fear','sadness','disgust','anger'];
+    return [
+      ...EMOTIONS.map((e, i) => ({
+        label: e.charAt(0).toUpperCase()+e.slice(1),
+        color: STACK_PALETTE[i % STACK_PALETTE.length],
+        match: r => (r.emotion||'').toLowerCase() === e,
+      })),
+      { label:'Other', color:'#475569', match: r => !EMOTIONS.includes((r.emotion||'').toLowerCase()) },
+    ];
+  }
+  if(by === 'custom') {
+    const groups = (def.stackGroups || []).filter(g => g.label);
+    const matched = new Set();
+    const layers = groups.map(g => ({
+      label: g.label, color: g.color,
+      bool: g.bool,
+      match: r => {
+        if(!boolMatch(g.bool, getRecordText(r))) return false;
+        matched.add(r);
+        return true;
+      },
+    }));
+    layers.push({ label:'Other', color:'#475569', match: r => !matched.has(r) });
+    return layers;
+  }
+  return [];
+}
+
+// ── STACKED BAR (rewritten) ──
+function drawStackedBar(body, idx, def, segs) {
+  const layers  = resolveStackLayers(def);
+  if(!layers.length) { body.innerHTML='<div style="color:var(--muted);padding:20px;">No stack layers defined.</div>'; return; }
+
+  const horizontal = segs.length > 7;
+  const h = horizontal ? Math.max(300, segs.length * 34) : 300;
+  const canvas = mkCanvas(body, h);
+
+  // For each layer, for each segment: collect matching records
+  // layerRecs[layerIdx][segIdx] = []
+  const layerRecs = layers.map(() => segs.map(() => []));
+
+  segs.forEach((s, si) => {
+    // For custom, reset matched set per segment
+    const matched = new Set();
+    layers.forEach((layer, li) => {
+      if(def.stackBy === 'custom' && layer.label === 'Other') return; // handle last
+      s.records.forEach(r => {
+        let matches;
+        if(def.stackBy === 'custom') {
+          matches = boolMatch(layer.bool||'', getRecordText(r));
+          if(matches) matched.add(r);
+        } else {
+          matches = layer.match(r);
+        }
+        if(matches) layerRecs[li][si].push(r);
+      });
     });
-    posRecs.push(pos); neuRecs.push(neu); negRecs.push(neg);
-    posD.push(pos.length); neuD.push(neu.length); negD.push(neg.length);
+    // Fill Other layer
+    if(def.stackBy === 'custom') {
+      const otherIdx = layers.findIndex(l => l.label === 'Other');
+      if(otherIdx > -1) {
+        layerRecs[otherIdx][si] = s.records.filter(r => !matched.has(r));
+      }
+    }
   });
 
-  const sentData = [
-    {label:'Positive', data:posD, recs:posRecs, bg:'#22c55e'},
-    {label:'Neutral',  data:neuD, recs:neuRecs, bg:'#94a3b8'},
-    {label:'Negative', data:negD, recs:negRecs, bg:'#ef4444'},
-  ];
+  const datasets = layers.map((layer, li) => ({
+    label: layer.label,
+    data:  segs.map((_, si) => layerRecs[li][si].length),
+    backgroundColor: layer.color,
+    borderWidth: 0,
+  }));
 
   destroyChart(idx);
   ST.chartInstances[idx] = new Chart(canvas, {
     type:'bar',
-    data:{ labels:segs.map(s=>s.label), datasets: sentData.map(d=>({label:d.label,data:d.data,backgroundColor:d.bg,borderWidth:0})) },
+    data:{ labels: segs.map(s => s.label), datasets },
     options:{
       responsive:true, maintainAspectRatio:false,
+      indexAxis: horizontal ? 'y' : 'x',
       onClick: (_e, els) => {
         if(!els.length) return;
-        const el = els[0];
-        const segIdx  = el.index;
-        const sentIdx = el.datasetIndex;
-        const recs    = sentData[sentIdx].recs[segIdx];
-        openMentions(segs[segIdx].label + ' — ' + sentData[sentIdx].label, recs);
+        const segIdx   = els[0].index;
+        const layerIdx = els[0].datasetIndex;
+        const recs     = layerRecs[layerIdx][segIdx];
+        openMentions(segs[segIdx].label + ' — ' + layers[layerIdx].label, recs);
       },
       plugins:{ legend:{display:false}, tooltip:TOOLTIP },
-      scales:{ x:{stacked:true,...SCALES.x}, y:{stacked:true,...SCALES.y} }
+      scales:{
+        x:{ stacked:true, ...(horizontal ? SCALES.y : SCALES.x) },
+        y:{ stacked:true, ...(horizontal ? SCALES.x : SCALES.y) },
+      }
     }
   });
-  canvas.style.cursor='pointer';
+  canvas.style.cursor = 'pointer';
 
+  // Legend: one row per layer, showing count per segment
   const legEl = document.createElement('div');
-  legEl.className='chart-legend';
-  legEl.style.marginTop='8px';
-  sentData.forEach((d,si) => {
-    segs.forEach((s,gi) => {
-      const item = document.createElement('div');
-      item.className='legend-item';
-      item.style.cssText='cursor:pointer;padding:3px 6px;border-radius:2px;transition:background .15s;';
-      item.innerHTML=`<div class="legend-dot" style="background:${d.bg}"></div>${escHtml(s.label)} ${d.label}: <strong style="color:var(--text);margin-left:2px;">${d.recs[gi].length.toLocaleString()}</strong>`;
-      item.addEventListener('click',()=>openMentions(s.label+' — '+d.label, d.recs[gi]));
-      item.addEventListener('mouseenter',()=>item.style.background='rgba(0,212,180,.06)');
-      item.addEventListener('mouseleave',()=>item.style.background='');
-      legEl.appendChild(item);
+  legEl.className = 'chart-legend';
+  legEl.style.cssText = 'margin-top:10px;flex-direction:column;gap:4px;';
+
+  layers.forEach((layer, li) => {
+    const hasAny = segs.some((_, si) => layerRecs[li][si].length > 0);
+    if(!hasAny) return; // hide empty layers
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;flex-wrap:wrap;gap:6px;align-items:center;';
+    const lbl = document.createElement('span');
+    lbl.style.cssText = 'display:flex;align-items:center;gap:4px;font-size:11px;color:var(--muted);min-width:80px;flex-shrink:0;';
+    lbl.innerHTML = `<div class="legend-dot" style="background:${layer.color}"></div>${escHtml(layer.label)}`;
+    row.appendChild(lbl);
+
+    segs.forEach((s, si) => {
+      const count = layerRecs[li][si].length;
+      const item  = document.createElement('div');
+      item.className = 'legend-item';
+      item.style.cssText = 'cursor:pointer;padding:2px 6px;border-radius:2px;transition:background .15s;font-size:11px;';
+      item.innerHTML = `${escHtml(s.label)}: <strong style="color:var(--text);margin-left:2px;">${count.toLocaleString()}</strong>`;
+      item.addEventListener('click', () => openMentions(s.label + ' — ' + layer.label, layerRecs[li][si]));
+      item.addEventListener('mouseenter', () => item.style.background='rgba(0,212,180,.06)');
+      item.addEventListener('mouseleave', () => item.style.background='');
+      row.appendChild(item);
     });
+    legEl.appendChild(row);
   });
+
   body.appendChild(legEl);
-  const hint=document.createElement('div');
-  hint.style.cssText='font-size:10px;color:var(--muted);margin-top:4px;';
-  hint.textContent='Click a bar segment or legend item to view mentions';
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:6px;';
+  hint.textContent = 'Click any bar segment or legend item to view mentions';
   body.appendChild(hint);
 }
 
