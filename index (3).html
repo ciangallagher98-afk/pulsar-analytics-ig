@@ -1,0 +1,1418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Pulsar Analytics</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+:root {
+  --bg:#0A1628; --surface:#111E35; --surface2:#162240; --border:#1E2F4A;
+  --teal:#00D4B4; --teal-dim:#009e87; --blue:#3B82F6;
+  --text:#E2E8F0; --muted:#64748B; --muted2:#94a3b8;
+  --pos:#22c55e; --neg:#ef4444; --neu:#94a3b8;
+  --font:'IBM Plex Sans','Segoe UI',sans-serif;
+  --mono:'IBM Plex Mono','Courier New',monospace;
+}
+@import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:var(--bg);color:var(--text);font-family:var(--font);font-size:14px;min-height:100vh;}
+::-webkit-scrollbar{width:5px;height:5px;}
+::-webkit-scrollbar-track{background:var(--bg);}
+::-webkit-scrollbar-thumb{background:var(--border);}
+.hidden{display:none!important;}
+.flex{display:flex;} .col{flex-direction:column;} .center{align-items:center;} .between{justify-content:space-between;} .wrap{flex-wrap:wrap;}
+.muted{color:var(--muted);} .mono{font-family:var(--mono);}
+.tag{display:inline-flex;align-items:center;background:rgba(0,212,180,.1);border:1px solid rgba(0,212,180,.25);color:var(--teal);padding:2px 8px;font-size:11px;border-radius:2px;}
+h1{font-size:20px;font-weight:600;} h2{font-size:15px;font-weight:600;} h3{font-size:13px;font-weight:500;}
+label{display:block;font-size:11px;font-weight:500;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:5px;}
+input[type=text],input[type=password],input[type=date],input[type=number],select,textarea{
+  width:100%;background:var(--bg);border:1px solid var(--border);color:var(--text);
+  padding:9px 11px;font-family:var(--font);font-size:13px;outline:none;transition:border-color .15s;border-radius:2px;}
+input:focus,select:focus,textarea:focus{border-color:var(--teal);}
+textarea{resize:vertical;min-height:60px;}
+select option{background:var(--surface);}
+.form-row{margin-bottom:14px;}
+.form-grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;}
+button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:2px;}
+.btn{padding:8px 16px;font-size:12px;font-weight:500;letter-spacing:.05em;border:none;}
+.btn-primary{background:var(--teal);color:#0A1628;text-transform:uppercase;}
+.btn-primary:hover{background:var(--teal-dim);}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;}
+.btn-ghost{background:transparent;color:var(--teal);border:1px solid var(--teal);}
+.btn-ghost:hover{background:rgba(0,212,180,.08);}
+.btn-danger{background:transparent;color:var(--neg);border:1px solid rgba(239,68,68,.4);}
+.btn-danger:hover{background:rgba(239,68,68,.08);}
+.btn-sm{padding:5px 10px;font-size:11px;}
+.btn-xs{padding:3px 7px;font-size:10px;}
+.btn-icon{background:transparent;border:none;color:var(--muted);padding:4px;line-height:1;}
+.btn-icon:hover{color:var(--text);}
+.card{background:var(--surface);border:1px solid var(--border);border-radius:3px;padding:24px;}
+.error-box{background:rgba(239,68,68,.1);border:1px solid rgba(239,68,68,.3);color:#fca5a5;padding:10px 12px;font-size:12px;border-radius:2px;}
+.spinner{width:18px;height:18px;border:2px solid var(--border);border-top-color:var(--teal);border-radius:50%;animation:spin .7s linear infinite;flex-shrink:0;}
+.spinner-lg{width:32px;height:32px;border-width:3px;}
+@keyframes spin{to{transform:rotate(360deg);}}
+@keyframes pulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:.5;transform:scale(.8);}}
+
+/* SETUP */
+#screen-setup{display:flex;align-items:center;justify-content:center;min-height:100vh;padding:24px;}
+.setup-wrap{width:100%;max-width:460px;}
+.logo-row{display:flex;align-items:center;gap:10px;margin-bottom:24px;}
+.logo-dot{width:9px;height:9px;background:var(--teal);border-radius:50%;animation:pulse 2s infinite;}
+.logo-text{font-size:12px;font-weight:500;letter-spacing:.14em;text-transform:uppercase;color:var(--teal);}
+
+/* INGEST */
+#screen-ingest{display:none;min-height:100vh;padding:32px 24px;}
+.ingest-wrap{width:100%;max-width:740px;margin:0 auto;}
+.search-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;max-height:380px;overflow-y:auto;padding:2px;}
+.search-card{background:var(--surface2);border:1px solid var(--border);padding:12px 14px;cursor:pointer;transition:all .15s;border-radius:2px;display:flex;align-items:flex-start;gap:10px;}
+.search-card:hover{border-color:var(--teal);background:rgba(0,212,180,.04);}
+.search-card.selected{border-color:var(--teal);background:rgba(0,212,180,.08);}
+.search-card input[type=checkbox]{accent-color:var(--teal);width:14px;height:14px;flex-shrink:0;margin-top:1px;}
+.search-card-name{font-size:12px;font-weight:500;line-height:1.4;}
+.search-card-meta{font-size:10px;color:var(--muted);font-family:var(--mono);margin-top:3px;}
+
+/* PROGRESS */
+#screen-progress{display:none;min-height:100vh;align-items:center;justify-content:center;flex-direction:column;gap:24px;}
+.progress-card{background:var(--surface);border:1px solid var(--border);padding:32px 40px;width:100%;max-width:520px;border-radius:3px;}
+.progress-bar-track{height:6px;background:var(--border);border-radius:3px;overflow:hidden;margin:16px 0 8px;}
+.progress-bar-fill{height:100%;background:var(--teal);border-radius:3px;transition:width .3s;}
+.progress-log{max-height:160px;overflow-y:auto;font-size:11px;color:var(--muted);font-family:var(--mono);display:flex;flex-direction:column;gap:4px;margin-top:12px;}
+
+/* ANALYTICS */
+#screen-analytics{display:none;flex-direction:column;min-height:100vh;}
+.topbar{background:var(--surface);border-bottom:1px solid var(--border);height:52px;padding:0 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+.topbar-left{display:flex;align-items:center;gap:14px;}
+.live-pip{display:flex;align-items:center;gap:5px;font-size:10px;color:var(--teal);letter-spacing:.1em;text-transform:uppercase;}
+.pip-dot{width:5px;height:5px;background:var(--teal);border-radius:50%;animation:pulse 2s infinite;}
+.analytics-body{display:flex;flex:1;overflow:hidden;height:calc(100vh - 52px - 72px);}
+.sidebar{width:280px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--border);display:flex;flex-direction:column;overflow-y:auto;}
+.main-area{flex:1;overflow-y:auto;padding:20px;display:grid;grid-template-columns:1fr 1fr;gap:16px;align-content:start;}
+.chart-panel.full{grid-column:1 / -1;}
+.chart-panel.half{grid-column:span 1;}
+.sb-section{border-bottom:1px solid var(--border);padding:14px 16px;}
+.sb-title{font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted);font-weight:500;margin-bottom:10px;}
+.stats-strip{display:grid;grid-template-columns:repeat(4,1fr);gap:1px;background:var(--border);border-bottom:1px solid var(--border);}
+.stat-cell{background:var(--surface);padding:14px 18px;}
+.stat-label{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted);margin-bottom:4px;}
+.stat-val{font-size:22px;font-weight:300;font-family:var(--mono);color:var(--teal);}
+.stat-sub{font-size:10px;color:var(--muted);margin-top:2px;}
+.chart-panel{background:var(--surface);border:1px solid var(--border);border-radius:3px;}
+.chart-panel-header{padding:14px 18px 10px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;gap:10px;}
+.chart-panel-title{font-size:12px;font-weight:500;}
+.chart-panel-body{padding:16px 18px;overflow:hidden;}
+.chart-legend{display:flex;flex-wrap:wrap;gap:10px;margin-top:10px;}
+.legend-item{display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);}
+.legend-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0;}
+
+/* MODAL */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);z-index:200;align-items:flex-start;justify-content:center;overflow-y:auto;padding:40px 20px;}
+.modal-overlay.open{display:flex;}
+.modal{background:var(--surface);border:1px solid var(--border);border-radius:3px;width:100%;max-width:700px;margin:auto;}
+.modal-header{padding:18px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;}
+.modal-body{padding:22px;max-height:70vh;overflow-y:auto;}
+.modal-footer{padding:14px 22px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:10px;}
+
+/* SEGMENT BUILDER */
+.segment-list{display:flex;flex-direction:column;gap:10px;margin-bottom:14px;}
+.segment-row{background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:12px 14px;}
+.segment-row-header{display:flex;align-items:center;gap:8px;margin-bottom:10px;}
+.seg-color-swatch{width:12px;height:12px;border-radius:50%;flex-shrink:0;}
+.bool-hint{font-size:10px;color:var(--muted);line-height:1.6;margin-top:8px;padding:8px;background:rgba(0,0,0,.25);border-radius:2px;}
+
+/* WORD CLOUD */
+.wordcloud-wrap{position:relative;width:100%;min-height:180px;display:flex;flex-wrap:wrap;align-items:center;justify-content:center;gap:8px;padding:16px;}
+.wc-word{cursor:default;line-height:1.2;transition:opacity .15s;}
+.wc-word:hover{opacity:.6;}
+
+/* width toggle */
+.width-toggle{display:flex;gap:4px;}
+.width-btn{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 8px;font-size:10px;letter-spacing:.04em;}
+.width-btn.active{border-color:var(--teal);color:var(--teal);}
+/* mentions drawer */
+.mentions-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;}
+.mentions-overlay.open{display:flex;align-items:flex-start;justify-content:flex-end;}
+.mentions-drawer{background:var(--surface);border-left:1px solid var(--border);width:520px;max-width:95vw;height:100vh;display:flex;flex-direction:column;}
+.mentions-drawer-header{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;}
+.mentions-drawer-meta{font-size:11px;color:var(--muted);margin-top:2px;}
+.mentions-list{flex:1;overflow-y:auto;padding:12px 16px;display:flex;flex-direction:column;gap:8px;}
+.mention-card{background:var(--surface2);border:1px solid var(--border);border-radius:2px;padding:12px 14px;}
+.mention-title{font-size:12px;font-weight:500;margin-bottom:4px;line-height:1.4;}
+.mention-content{font-size:11px;color:var(--muted);line-height:1.5;margin-bottom:8px;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden;}
+.mention-meta{display:flex;flex-wrap:wrap;gap:6px;align-items:center;}
+.mention-tag{font-size:10px;padding:2px 6px;border-radius:2px;font-family:var(--mono);}
+.mention-tag.source{background:rgba(59,130,246,.15);color:#93c5fd;}
+.mention-tag.sentiment-positive{background:rgba(34,197,94,.15);color:#86efac;}
+.mention-tag.sentiment-negative{background:rgba(239,68,68,.15);color:#fca5a5;}
+.mention-tag.sentiment-neutral{background:rgba(148,163,184,.15);color:#cbd5e1;}
+.mention-tag.date{background:rgba(0,0,0,.2);color:var(--muted);}
+.mention-link{font-size:10px;color:var(--teal);text-decoration:none;margin-left:auto;}
+.mention-link:hover{text-decoration:underline;}
+.mentions-empty{display:flex;align-items:center;justify-content:center;flex:1;color:var(--muted);font-size:13px;}
+@media(max-width:900px){.sidebar{width:240px;}.stats-strip{grid-template-columns:repeat(2,1fr);}.search-grid{grid-template-columns:1fr;}.main-area{grid-template-columns:1fr;}}
+@media(max-width:640px){.analytics-body{flex-direction:column;height:auto;}.sidebar{width:100%;border-right:none;border-bottom:1px solid var(--border);}}
+@media print {
+  body{background:#fff!important;color:#000!important;}
+  .topbar,.sidebar,.mentions-overlay{display:none!important;}
+  #screen-setup,#screen-ingest,#screen-progress{display:none!important;}
+  #screen-analytics{display:block!important;}
+  .analytics-body{display:block!important;height:auto!important;overflow:visible!important;}
+  .main-area{display:grid!important;grid-template-columns:1fr 1fr;gap:12px;padding:0;overflow:visible!important;height:auto!important;}
+  .chart-panel.full{grid-column:1 / -1;}
+  .chart-panel.half{grid-column:span 1;}
+  .chart-panel{background:#fff!important;border:1px solid #ccc!important;break-inside:avoid;page-break-inside:avoid;}
+  .chart-panel-header{background:#fff!important;border-bottom:1px solid #eee!important;}
+  .chart-panel-title{color:#000!important;}
+  .stats-strip{display:grid!important;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:12px;background:#eee!important;}
+  .stat-cell{background:#f9f9f9!important;border:1px solid #ddd!important;}
+  .stat-label{color:#666!important;}
+  .stat-val{color:#00a38c!important;}
+  .stat-sub{color:#999!important;}
+  .chart-panel-header .btn,.width-toggle{display:none!important;}
+  .print-header{display:block!important;}
+  .legend-item{color:#333!important;}
+  .chart-legend .muted,.chart-legend span{color:#555!important;}
+  canvas{max-width:100%!important;}
+}
+.print-header{display:none;padding:16px 0 8px;border-bottom:2px solid #00D4B4;margin-bottom:16px;}
+.print-header h1{color:#000;font-size:18px;}
+.print-header p{color:#666;font-size:12px;margin-top:4px;}
+</style>
+</head>
+<body>
+
+<!-- SCREEN 1: SETUP -->
+<div id="screen-setup">
+  <div class="setup-wrap">
+    <div class="logo-row"><div class="logo-dot"></div><span class="logo-text">Pulsar Analytics</span></div>
+    <div class="card">
+      <h1 style="margin-bottom:6px;">Connect</h1>
+      <p style="color:var(--muted);font-size:13px;margin-bottom:22px;">Enter your API token to load all searches in the account.</p>
+      <div class="form-row">
+        <label>API Token</label>
+        <input type="password" id="s1-token" placeholder="Paste your Bearer token" />
+      </div>
+      <button class="btn btn-primary" style="width:100%;margin-top:4px;" onclick="doLoadSearches()">Load searches</button>
+      <div id="s1-error" class="error-box hidden" style="margin-top:12px;"></div>
+    </div>
+  </div>
+</div>
+
+<!-- SCREEN 2: INGEST -->
+<div id="screen-ingest">
+  <div class="ingest-wrap">
+    <div class="logo-row"><div class="logo-dot"></div><span class="logo-text">Pulsar Analytics</span></div>
+    <div class="card" style="margin-bottom:16px;">
+      <div class="flex between center" style="margin-bottom:14px;">
+        <h2>Select searches</h2>
+        <div class="flex" style="gap:8px;align-items:center;flex-wrap:wrap;">
+          <button class="btn btn-ghost btn-sm" onclick="selectAll(true)">All</button>
+          <button class="btn btn-ghost btn-sm" onclick="selectAll(false)">None</button>
+          <select id="s2-status-filter" style="width:120px;padding:5px 8px;font-size:12px;" onchange="filterIngestList()">
+            <option value="">All statuses</option>
+            <option value="READY">Ready</option>
+            <option value="DRAFT">Draft</option>
+            <option value="ARCHIVED">Archived</option>
+            <option value="APPLYING">Applying</option>
+            <option value="EDIT">Running</option>
+          </select>
+          <input type="text" id="s2-filter" placeholder="Filter by name..." style="width:160px;" oninput="filterIngestList()" />
+        </div>
+      </div>
+      <div class="search-grid" id="s2-search-grid"></div>
+      <div style="margin-top:10px;font-size:11px;color:var(--muted);" id="s2-sel-count">0 selected</div>
+    </div>
+    <div class="card" style="margin-bottom:16px;">
+      <h2 style="margin-bottom:14px;">Date range</h2>
+      <div class="form-grid2">
+        <div class="form-row" style="margin:0;"><label>From</label><input type="date" id="s2-from" /></div>
+        <div class="form-row" style="margin:0;"><label>To</label><input type="date" id="s2-to" /></div>
+      </div>
+    </div>
+    <div class="flex" style="justify-content:flex-end;gap:10px;">
+      <button class="btn btn-ghost" onclick="backToSetup()">Back</button>
+      <button class="btn btn-primary" onclick="doIngest()">Ingest data</button>
+    </div>
+    <div id="s2-error" class="error-box hidden" style="margin-top:12px;"></div>
+  </div>
+</div>
+
+<!-- SCREEN 3: PROGRESS -->
+<div id="screen-progress">
+  <div class="progress-card">
+    <div class="flex" style="gap:12px;align-items:center;margin-bottom:8px;">
+      <div class="spinner spinner-lg"></div>
+      <div>
+        <h2 style="margin-bottom:2px;">Ingesting data</h2>
+        <p style="color:var(--muted);font-size:12px;" id="prog-status">Starting...</p>
+      </div>
+    </div>
+    <div class="progress-bar-track"><div class="progress-bar-fill" id="prog-bar" style="width:0%"></div></div>
+    <div class="flex between" style="font-size:11px;color:var(--muted);">
+      <span id="prog-records">0 records</span><span id="prog-pct">0%</span>
+    </div>
+    <div class="progress-log" id="prog-log"></div>
+  </div>
+</div>
+
+<!-- SCREEN 4: ANALYTICS -->
+<div id="screen-analytics">
+  <div class="topbar">
+    <div class="topbar-left">
+      <div class="live-pip"><div class="pip-dot"></div>Live</div>
+      <span style="font-size:13px;color:var(--muted);">Pulsar Analytics</span>
+      <span id="top-record-count" class="tag"></span>
+    </div>
+    <div class="flex" style="gap:8px;align-items:center;">
+      <span id="top-date-range" style="font-size:11px;color:var(--muted);font-family:var(--mono);"></span>
+      <button class="btn btn-ghost btn-sm" onclick="exportPDF()">Export PDF</button>
+      <button class="btn btn-ghost btn-sm" onclick="backToSetup()">New session</button>
+    </div>
+  </div>
+
+  <div class="stats-strip">
+    <div class="stat-cell"><div class="stat-label">Total records</div><div class="stat-val" id="st-total">—</div><div class="stat-sub">across all searches</div></div>
+    <div class="stat-cell"><div class="stat-label">Searches</div><div class="stat-val" id="st-searches">—</div><div class="stat-sub">ingested</div></div>
+    <div class="stat-cell"><div class="stat-label">Date range</div><div class="stat-val" id="st-range" style="font-size:13px;padding-top:4px;">—</div><div class="stat-sub" id="st-days"></div></div>
+    <div class="stat-cell"><div class="stat-label">Top source</div><div class="stat-val" id="st-source" style="font-size:14px;padding-top:4px;">—</div><div class="stat-sub">by volume</div></div>
+  </div>
+
+  <div class="print-header" id="print-header">
+    <h1 id="print-title">Pulsar Analytics Dashboard</h1>
+    <p id="print-meta"></p>
+  </div>
+  <div class="analytics-body">
+    <div class="sidebar">
+      <div class="sb-section">
+        <div class="sb-title">Searches</div>
+        <div id="sb-searches" style="display:flex;flex-direction:column;gap:6px;"></div>
+      </div>
+      <div class="sb-section">
+        <div class="sb-title">Add chart</div>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('bar')">＋ Bar chart</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('stacked-bar')">＋ Stacked bar chart</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('line')">＋ Line chart (over time)</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('pie')">＋ Pie / donut chart</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('wordcloud')">＋ Word cloud</button>
+        </div>
+      </div>
+    </div>
+    <div class="main-area" id="main-area">
+      <div data-placeholder style="color:var(--muted);font-size:13px;text-align:center;padding:60px 0;">Use the sidebar to add your first chart.</div>
+    </div>
+  </div>
+</div>
+
+<!-- CHART BUILDER MODAL -->
+<div class="modal-overlay" id="chart-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="modal-title">Build chart</h2>
+      <button class="btn-icon" onclick="closeModal()" style="font-size:18px;">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <label>Chart title</label>
+        <input type="text" id="m-title" placeholder="e.g. Legaltech companies by volume" />
+      </div>
+      <div class="form-row">
+        <label>Chart width</label>
+        <div style="display:flex;gap:8px;">
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);cursor:pointer;">
+            <input type="radio" name="m-width" id="m-width-full" value="full" checked style="accent-color:var(--teal);width:14px;height:14px;" />
+            Full width
+          </label>
+          <label style="display:flex;align-items:center;gap:6px;text-transform:none;letter-spacing:0;font-size:13px;color:var(--text);cursor:pointer;">
+            <input type="radio" name="m-width" id="m-width-half" value="half" style="accent-color:var(--teal);width:14px;height:14px;" />
+            Half width (2 per row)
+          </label>
+        </div>
+      </div>
+      <div id="m-gran-row" class="form-row hidden">
+        <label>Time granularity</label>
+        <select id="m-gran">
+          <option value="day">Daily</option>
+          <option value="week">Weekly</option>
+          <option value="month" selected>Monthly</option>
+        </select>
+      </div>
+      <div id="m-wc-row" class="form-row hidden">
+        <label>Word source field</label>
+        <select id="m-wc-field">
+          <option value="keywords">Keywords</option>
+          <option value="topics">Topics</option>
+          <option value="entities">Entities</option>
+        </select>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px;">
+        <h3>Segments <span style="color:var(--muted);font-weight:400;font-size:11px;">(up to 25)</span></h3>
+        <button class="btn btn-ghost btn-sm" onclick="addSegment()">＋ Add segment</button>
+      </div>
+      <div class="segment-list" id="segment-list"></div>
+      <div class="bool-hint">
+        <strong style="color:var(--teal);">Boolean filter syntax:</strong><br>
+        <span style="font-family:var(--mono);">Harvey AND (funding OR investment)</span><br>
+        <span style="font-family:var(--mono);">"legal tech" OR legaltech</span><br>
+        <span style="font-family:var(--mono);">law* AND NOT (lawsuit OR lawyer)</span><br>
+        <span style="font-family:var(--mono);">merger NEAR/5 acquisition</span>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="buildChart()">Build chart</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ════════════════════════════════════════════════
+// CONFIG
+// ════════════════════════════════════════════════
+// Netlify Functions — redirects in netlify.toml route /trac and /data here
+const TRAC = '/trac';
+const DATA = '/data';
+const PAGE_SIZE = 100;
+const PALETTE = [
+  '#00D4B4','#3B82F6','#F59E0B','#EC4899','#8B5CF6',
+  '#22c55e','#f97316','#06b6d4','#a855f7','#fb7185',
+  '#84cc16','#14b8a6','#f43f5e','#6366f1','#eab308',
+  '#10b981','#0ea5e9','#d946ef','#64748b','#fb923c',
+  '#7c3aed','#059669','#dc2626','#2563eb','#d97706'
+];
+
+// ════════════════════════════════════════════════
+// STATE
+// ════════════════════════════════════════════════
+let ST = {
+  token: '', allSearches: [], selectedSearches: [],
+  dateFrom: '', dateTo: '',
+  records: {},        // { searchId: [TracContent,...] }
+  chartDefs: [],      // chart definitions
+  chartInstances: {}, // Chart.js instances keyed by panel index
+  modalType: '', editingIdx: null,
+  segCount: 0,
+};
+
+// ════════════════════════════════════════════════
+// HELPERS
+// ════════════════════════════════════════════════
+const $  = id => document.getElementById(id);
+const fmt = n => Number(n||0).toLocaleString();
+
+function showScreen(id) {
+  ['screen-setup','screen-ingest','screen-progress','screen-analytics'].forEach(s => {
+    const el = document.getElementById(s);
+    el.style.display = (s===id) ? 'flex' : 'none';
+  });
+  if(id==='screen-analytics') document.getElementById('screen-analytics').style.display='flex';
+}
+
+function showErr(id, msg) { const e=$(id); e.textContent=msg; e.classList.remove('hidden'); }
+function hideErr(id) { $(id).classList.add('hidden'); }
+
+function progLog(msg) {
+  const log = $('prog-log');
+  const d = document.createElement('div');
+  d.textContent = '› ' + msg;
+  log.appendChild(d);
+  log.scrollTop = log.scrollHeight;
+}
+
+function setProgress(pct, status, records) {
+  $('prog-bar').style.width = pct + '%';
+  $('prog-pct').textContent = Math.round(pct) + '%';
+  if(status !== undefined) $('prog-status').textContent = status;
+  if(records !== undefined) $('prog-records').textContent = fmt(records) + ' records';
+}
+
+async function gql(endpoint, query, variables) {
+  const res = await fetch(endpoint, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${ST.token}` },
+    body: JSON.stringify({ query, variables })
+  });
+  if(!res.ok) throw new Error(`HTTP ${res.status}`);
+  const d = await res.json();
+  if(d.errors) throw new Error(d.errors.map(e => e.message).join('; '));
+  return d.data;
+}
+
+function statusColor(status) {
+  const map = {
+    READY:'#00D4B4', APPLYING:'#F59E0B', EDIT:'#00D4B4',
+    DRAFT:'#64748B', ARCHIVED:'#ef4444', PREPARING:'#F59E0B',
+    STOPPING:'#f97316', STOPPED:'#ef4444', APPLYING_RT_CHANGES:'#F59E0B',
+  };
+  return map[status] || '#64748B';
+}
+
+function statusLabel(status) {
+  if(status === 'EDIT') return 'RUNNING';
+  return status || 'unknown';
+}
+
+function fmtSource(s) {
+  return (s||'').replace(/_/g,' ').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+}
+
+function getAllRecords() {
+  return Object.values(ST.records).flat();
+}
+
+// ════════════════════════════════════════════════
+// SCREEN 1: SETUP
+// ════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', () => {
+  showScreen('screen-setup');
+  const now = new Date(), from = new Date(now);
+  from.setFullYear(from.getFullYear() - 1);
+  $('s2-to').value   = now.toISOString().slice(0,10);
+  $('s2-from').value = from.toISOString().slice(0,10);
+});
+
+async function doLoadSearches() {
+  hideErr('s1-error');
+  const token = $('s1-token').value.trim();
+  if(!token) return showErr('s1-error', 'Please enter your API token.');
+  ST.token = token;
+  const btn = document.querySelector('#screen-setup .btn-primary');
+  btn.disabled = true;
+
+  // Paginated — 100 per page, loop until hasNextPage is false
+  const Q = `query($first: Int, $after: String) {
+    searches(first: $first, after: $after) {
+      pageInfo { hasNextPage endCursor }
+      nodes {
+        ... on ContentsSearch { id name totalContents searchHash status }
+        ... on TopicsSearch   { id name totalContents searchHash status }
+        ... on PanelsSearch   { id name totalContents searchHash status }
+      }
+    }
+  }`;
+
+  const allNodes = [];
+  let cursor = null;
+
+  try {
+    while(true) {
+      const vars = { first: 100, ...(cursor ? { after: cursor } : {}) };
+      const data = await gql(TRAC, Q, vars);
+      const searches = data.searches;
+      const batch = (searches?.nodes || []).filter(n => n && n.id);
+      allNodes.push(...batch);
+      btn.textContent = 'Loading... ' + allNodes.length + ' searches found';
+      if(!searches?.pageInfo?.hasNextPage || !searches?.pageInfo?.endCursor) break;
+      cursor = searches.pageInfo.endCursor;
+    }
+    if(!allNodes.length) throw new Error('No READY searches found in this account.');
+    ST.allSearches = allNodes;
+    showScreen('screen-ingest');
+    renderSearchGrid(allNodes);
+  } catch(e) {
+    showErr('s1-error', 'Could not load searches: ' + e.message);
+  } finally {
+    btn.textContent = 'Load searches'; btn.disabled = false;
+  }
+}
+
+// ════════════════════════════════════════════════
+// SCREEN 2: INGEST
+// ════════════════════════════════════════════════
+function renderSearchGrid(searches) {
+  const grid = $('s2-search-grid');
+  grid.innerHTML = '';
+  searches.forEach(s => {
+    const sel = ST.selectedSearches.some(x => x.id === s.id);
+    const card = document.createElement('div');
+    card.className = 'search-card' + (sel ? ' selected' : '');
+    card.innerHTML = `
+      <input type="checkbox" ${sel ? 'checked' : ''} />
+      <div>
+        <div class="search-card-name">${s.name}</div>
+        <div class="search-card-meta" style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;">
+          <span>${s.totalContents ? fmt(s.totalContents)+' items' : ''}</span>
+          <span style="padding:1px 5px;border-radius:2px;font-size:9px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;background:${statusColor(s.status)};color:#0A1628;">${statusLabel(s.status)}</span>
+        </div>
+      </div>`;
+    card.addEventListener('click', () => toggleSearch(s, card));
+    grid.appendChild(card);
+  });
+  updateSelCount();
+}
+
+function filterIngestList() {
+  const q      = $('s2-filter').value.toLowerCase();
+  const status = $('s2-status-filter').value;
+  renderSearchGrid(ST.allSearches.filter(s => {
+    if(q && !s.name.toLowerCase().includes(q)) return false;
+    if(status && s.status !== status) return false;
+    return true;
+  }));
+}
+
+function toggleSearch(search, card) {
+  const idx = ST.selectedSearches.findIndex(s => s.id === search.id);
+  if(idx > -1) {
+    ST.selectedSearches.splice(idx, 1);
+    card.classList.remove('selected');
+    card.querySelector('input').checked = false;
+  } else {
+    ST.selectedSearches.push(search);
+    card.classList.add('selected');
+    card.querySelector('input').checked = true;
+  }
+  updateSelCount();
+}
+
+function selectAll(val) {
+  ST.selectedSearches = val ? [...ST.allSearches] : [];
+  renderSearchGrid(ST.allSearches);
+}
+
+function updateSelCount() {
+  $('s2-sel-count').textContent = ST.selectedSearches.length + ' selected — ' + ST.allSearches.length + ' total searches in account';
+}
+
+function backToSetup() {
+  ST.records = {}; ST.chartDefs = [];
+  Object.values(ST.chartInstances).forEach(c => { try { c.destroy(); } catch(e){} });
+  ST.chartInstances = {};
+  $('main-area').innerHTML = '<div data-placeholder style="color:var(--muted);font-size:13px;text-align:center;padding:60px 0;">Use the sidebar to add your first chart.</div>';
+  showScreen('screen-setup');
+}
+
+// ════════════════════════════════════════════════
+// INGEST: paginate all results
+// ════════════════════════════════════════════════
+async function doIngest() {
+  hideErr('s2-error');
+  if(!ST.selectedSearches.length) return showErr('s2-error', 'Select at least one search.');
+  const from = $('s2-from').value, to = $('s2-to').value;
+  if(!from || !to) return showErr('s2-error', 'Set a date range.');
+  if(new Date(from) >= new Date(to)) return showErr('s2-error', 'Start date must be before end date.');
+  ST.dateFrom = from; ST.dateTo = to;
+
+  showScreen('screen-progress');
+  $('prog-log').innerHTML = '';
+  setProgress(0, 'Starting...', 0);
+
+  const RESULTS_Q = `
+    query($filter: FilterInput!, $options: ResultsOptionsInput) {
+      results(filter: $filter, options: $options) {
+        total nextCursor
+        results {
+          title content publishedAt url domainName source
+          userScreenName sentiment emotion engagement
+          impressions language countryCode
+          topics keywords entities
+        }
+      }
+    }
+  `;
+
+  const dateFrom = from + 'T00:00:00Z';
+  const dateTo   = to   + 'T23:59:59Z';
+  const total    = ST.selectedSearches.length;
+  let grandTotal = 0;
+
+  try {
+    for(let si = 0; si < ST.selectedSearches.length; si++) {
+      const s = ST.selectedSearches[si];
+      ST.records[s.id] = [];
+      let cursor = null, page = 0, searchTotal = null;
+      progLog('Starting: ' + s.name);
+
+      while(true) {
+        const vars = {
+          filter: { searchIds: [s.searchHash || String(s.id)], dateFrom, dateTo },
+          options: { limit: PAGE_SIZE, ...(cursor ? { cursor } : {}) }
+        };
+        const data = await gql(DATA, RESULTS_Q, vars);
+        const res  = data.results;
+        if(searchTotal === null) searchTotal = res.total || 0;
+        const batch = res.results || [];
+        ST.records[s.id].push(...batch);
+        grandTotal += batch.length;
+        page++;
+
+        const sp = searchTotal > 0 ? Math.min(ST.records[s.id].length / searchTotal, 1) : 1;
+        setProgress(((si + sp) / total) * 100,
+          `${s.name} — page ${page} (${fmt(ST.records[s.id].length)} / ${fmt(searchTotal)})`,
+          grandTotal);
+
+        if(!res.nextCursor || batch.length === 0) break;
+        cursor = res.nextCursor;
+      }
+      progLog(`Done: ${s.name} — ${fmt(ST.records[s.id].length)} records`);
+    }
+    setProgress(100, 'Complete!', grandTotal);
+    setTimeout(showAnalytics, 700);
+  } catch(e) {
+    showScreen('screen-ingest');
+    showErr('s2-error', 'Ingest failed: ' + e.message);
+  }
+}
+
+// ════════════════════════════════════════════════
+// SCREEN 4: ANALYTICS
+// ════════════════════════════════════════════════
+function showAnalytics() {
+  showScreen('screen-analytics');
+  const all   = getAllRecords();
+  const total = all.length;
+
+  $('st-total').textContent    = fmt(total);
+  $('st-searches').textContent = ST.selectedSearches.length;
+  $('st-range').textContent    = ST.dateFrom + ' → ' + ST.dateTo;
+  $('top-record-count').textContent = fmt(total) + ' records';
+  $('top-date-range').textContent   = ST.dateFrom + ' to ' + ST.dateTo;
+
+  const days = Math.round((new Date(ST.dateTo) - new Date(ST.dateFrom)) / 86400000);
+  $('st-days').textContent = days + ' days';
+
+  const srcCounts = {};
+  all.forEach(r => { const s = r.source || 'unknown'; srcCounts[s] = (srcCounts[s]||0) + 1; });
+  const top = Object.entries(srcCounts).sort((a,b) => b[1]-a[1])[0];
+  if(top) $('st-source').textContent = fmtSource(top[0]);
+
+  const sbEl = $('sb-searches');
+  sbEl.innerHTML = '';
+  ST.selectedSearches.forEach((s, i) => {
+    const recs = ST.records[s.id] || [];
+    const div  = document.createElement('div');
+    div.style.cssText = 'display:flex;align-items:center;gap:6px;font-size:12px;';
+    div.innerHTML = `
+      <div style="width:8px;height:8px;border-radius:50%;background:${PALETTE[i%PALETTE.length]};flex-shrink:0;"></div>
+      <span style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="${s.name}">${s.name}</span>
+      <span style="color:var(--muted);font-size:10px;font-family:var(--mono);">${fmt(recs.length)}</span>`;
+    sbEl.appendChild(div);
+  });
+}
+
+// ════════════════════════════════════════════════
+// BOOLEAN FILTER ENGINE
+// ════════════════════════════════════════════════
+function tokenise(expr) {
+  const tokens = [], src = expr.trim();
+  let i = 0;
+  while(i < src.length) {
+    if(src[i] === ' ') { i++; continue; }
+    if(src[i] === '(') { tokens.push({t:'LP'}); i++; continue; }
+    if(src[i] === ')') { tokens.push({t:'RP'}); i++; continue; }
+    if(src[i] === '"') {
+      let j = i+1; while(j < src.length && src[j] !== '"') j++;
+      tokens.push({t:'PHRASE', v: src.slice(i+1,j).toLowerCase()});
+      i = j+1; continue;
+    }
+    let j = i; while(j < src.length && src[j] !== ' ' && src[j] !== '(' && src[j] !== ')') j++;
+    const w = src.slice(i,j), wu = w.toUpperCase();
+    if(wu === 'AND') tokens.push({t:'AND'});
+    else if(wu === 'OR') tokens.push({t:'OR'});
+    else if(wu === 'NOT') tokens.push({t:'NOT'});
+    else if(wu.startsWith('NEAR/')) tokens.push({t:'NEAR', n: parseInt(wu.slice(5))||5});
+    else tokens.push({t:'WORD', v: w.toLowerCase()});
+    i = j;
+  }
+  return tokens;
+}
+
+function matchTok(tok, text) {
+  if(!tok.v) return true;
+  if(tok.t === 'PHRASE') return text.includes(tok.v);
+  const pat = tok.v.replace(/\*/g,'.*').replace(/\?/g,'.');
+  try { return new RegExp('\\b' + pat + '\\b').test(text); } catch(e) { return text.includes(tok.v); }
+}
+
+function evalBool(tokens, text) {
+  let pos = 0;
+  function expr()  { return orExpr(); }
+  function orExpr(){ let l=andExpr(); while(tokens[pos]?.t==='OR'){pos++;l=l||andExpr();} return l; }
+  function andExpr(){ let l=notExpr(); while(tokens[pos]?.t==='AND'){pos++;l=l&&notExpr();} return l; }
+  function notExpr(){ if(tokens[pos]?.t==='NOT'){pos++;return !atom();} return atom(); }
+  function atom() {
+    if(!tokens[pos]) return false;
+    if(tokens[pos].t==='LP') {
+      pos++; const r=expr(); if(tokens[pos]?.t==='RP') pos++; return r;
+    }
+    if(tokens[pos].t==='NEAR') {
+      const n=tokens[pos].n; pos++;
+      const t1=tokens[pos++], t2=tokens[pos++];
+      if(!t1||!t2) return false;
+      const words = text.split(/\s+/);
+      for(let a=0;a<words.length;a++) {
+        if(!matchTok(t1, words[a])) continue;
+        for(let b=Math.max(0,a-n); b<Math.min(words.length,a+n+1); b++) {
+          if(b!==a && matchTok(t2, words[b])) return true;
+        }
+      }
+      return false;
+    }
+    return matchTok(tokens[pos++], text);
+  }
+  return expr();
+}
+
+function boolMatch(expr, text) {
+  if(!expr || !expr.trim()) return true;
+  try { return evalBool(tokenise(expr), (text||'').toLowerCase()); }
+  catch(e) { return true; }
+}
+
+function getRecordText(rec) {
+  return [
+    rec.title||'', rec.content||'', rec.url||'', rec.domainName||'',
+    rec.source||'', rec.userScreenName||'',
+    ...(Array.isArray(rec.keywords) ? rec.keywords : []),
+    ...(Array.isArray(rec.topics)   ? rec.topics   : []),
+    ...(Array.isArray(rec.entities) ? rec.entities : []),
+  ].join(' ');
+}
+
+function sentimentLabel(rec) {
+  const s = parseFloat(rec.sentiment);
+  if(!isNaN(s)) return s > 0.1 ? 'positive' : s < -0.1 ? 'negative' : 'neutral';
+  return (rec.sentiment||'').toString().toLowerCase() || 'neutral';
+}
+
+function applyFilter(records, filter) {
+  return records.filter(rec => {
+    if(filter.bool && !boolMatch(filter.bool, getRecordText(rec))) return false;
+    if(filter.sentiment && filter.sentiment !== 'any' && sentimentLabel(rec) !== filter.sentiment) return false;
+    if(filter.domain && filter.domain.trim()) {
+      const terms = filter.domain.split(',').map(t=>t.trim().toLowerCase()).filter(Boolean);
+      const hay   = ((rec.domainName||'') + ' ' + (rec.url||'')).toLowerCase();
+      if(!terms.some(t => hay.includes(t))) return false;
+    }
+    return true;
+  });
+}
+
+// ════════════════════════════════════════════════
+// SEGMENT RESOLUTION
+// ════════════════════════════════════════════════
+function resolveSegment(seg) {
+  let pool;
+  if(!seg.searchIds || seg.searchIds.includes('all') || !seg.searchIds.length) {
+    pool = getAllRecords();
+  } else {
+    pool = seg.searchIds.flatMap(id => ST.records[id] || []);
+  }
+  return applyFilter(pool, { bool: seg.bool, sentiment: seg.sentiment, domain: seg.domain });
+}
+
+// ════════════════════════════════════════════════
+// CHART BUILDER MODAL
+// ════════════════════════════════════════════════
+function openChartModal(type, editIdx = null) {
+  ST.modalType   = type;
+  ST.editingIdx  = editIdx;
+  ST.segCount    = 0;
+
+  $('m-title').value = '';
+  $('segment-list').innerHTML = '';
+  $('m-gran-row').classList.add('hidden');
+  $('m-wc-row').classList.add('hidden');
+
+  const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud' };
+  $('modal-title').textContent = titles[type] || 'Chart';
+
+  if(type === 'line')      $('m-gran-row').classList.remove('hidden');
+  if(type === 'wordcloud') $('m-wc-row').classList.remove('hidden');
+
+  if(editIdx !== null) {
+    const def = ST.chartDefs[editIdx];
+    $('m-title').value = def.title || '';
+    if(def.granularity) $('m-gran').value     = def.granularity;
+    if(def.wcField)     $('m-wc-field').value = def.wcField;
+    // Restore width radio
+    const wval = def.width || 'full';
+    const wRadio = document.querySelector(`input[name="m-width"][value="${wval}"]`);
+    if(wRadio) wRadio.checked = true;
+    def.segments.forEach(seg => addSegment(seg));
+  } else {
+    // Default to full width for new charts
+    const fullRadio = document.querySelector('input[name="m-width"][value="full"]');
+    if(fullRadio) fullRadio.checked = true;
+    addSegment();
+  }
+
+  $('chart-modal').classList.add('open');
+}
+
+function closeModal() { $('chart-modal').classList.remove('open'); }
+
+function addSegment(prefill = null) {
+  if(ST.segCount >= 25) { alert('Maximum 25 segments per chart.'); return; }
+  const i = ST.segCount++;
+  const color = PALETTE[i % PALETTE.length];
+  const row = document.createElement('div');
+  row.className = 'segment-row';
+
+  const multiSearch = ST.selectedSearches.length > 1;
+  const searchOpts  = multiSearch
+    ? `<div class="form-row" style="margin:0 0 8px;">
+        <label>Search(es) — hold Ctrl/Cmd for multiple</label>
+        <select class="seg-searches" multiple style="height:72px;">
+          <option value="all">All searches</option>
+          ${ST.selectedSearches.map(s=>`<option value="${s.id}">${s.name}</option>`).join('')}
+        </select>
+       </div>`
+    : '';
+
+  row.innerHTML = `
+    <div class="segment-row-header">
+      <div class="seg-color-swatch" style="background:${color};"></div>
+      <input type="text" class="seg-label" value="${prefill?.label || 'Segment '+(i+1)}" style="flex:1;font-weight:500;" />
+      <button class="btn-icon" onclick="this.closest('.segment-row').remove()" title="Remove">✕</button>
+    </div>
+    ${searchOpts}
+    <div class="form-row" style="margin:0 0 8px;">
+      <label>Keyword / phrase filter (boolean)</label>
+      <textarea class="seg-bool" rows="2" placeholder='e.g. Harvey AND (funding OR investment)'>${prefill?.bool||''}</textarea>
+    </div>
+    <div class="form-grid2" style="gap:8px;">
+      <div>
+        <label>Sentiment</label>
+        <select class="seg-sentiment">
+          <option value="any">Any</option>
+          <option value="positive">Positive</option>
+          <option value="neutral">Neutral</option>
+          <option value="negative">Negative</option>
+        </select>
+      </div>
+      <div>
+        <label>Domain / URL contains</label>
+        <input type="text" class="seg-domain" placeholder="e.g. ft.com, bloomberg" value="${prefill?.domain||''}" />
+      </div>
+    </div>`;
+
+  if(prefill?.sentiment) row.querySelector('.seg-sentiment').value = prefill.sentiment;
+  if(prefill?.searchIds && multiSearch) {
+    const sel = row.querySelector('.seg-searches');
+    Array.from(sel.options).forEach(o => { o.selected = prefill.searchIds.includes(o.value); });
+  }
+
+  $('segment-list').appendChild(row);
+}
+
+function readSegments() {
+  return Array.from(document.querySelectorAll('#segment-list .segment-row')).map((row, i) => {
+    const selEl = row.querySelector('.seg-searches');
+    let searchIds = ['all'];
+    if(selEl && selEl.tagName === 'SELECT') {
+      const chosen = Array.from(selEl.selectedOptions).map(o => o.value);
+      if(chosen.length && !chosen.includes('all')) searchIds = chosen;
+    }
+    return {
+      label:     row.querySelector('.seg-label').value || 'Segment '+(i+1),
+      color:     PALETTE[i % PALETTE.length],
+      bool:      row.querySelector('.seg-bool').value  || '',
+      sentiment: row.querySelector('.seg-sentiment').value || 'any',
+      domain:    row.querySelector('.seg-domain').value || '',
+      searchIds,
+    };
+  });
+}
+
+// ════════════════════════════════════════════════
+// BUILD / RENDER CHARTS
+// ════════════════════════════════════════════════
+function buildChart() {
+  const segs = readSegments();
+  if(!segs.length) { alert('Add at least one segment.'); return; }
+  const selectedWidth = document.querySelector('input[name="m-width"]:checked')?.value || 'full';
+  const def = {
+    title:       $('m-title').value || 'Chart',
+    type:        ST.modalType,
+    segments:    segs,
+    granularity: $('m-gran').value,
+    wcField:     $('m-wc-field').value,
+    width:       selectedWidth,
+  };
+  closeModal();
+
+  if(ST.editingIdx !== null) {
+    // Preserve width if user didn't change it (it was set via toggle, not modal)
+    def.width = selectedWidth;
+    ST.chartDefs[ST.editingIdx] = def;
+    reDrawChart(ST.editingIdx);
+  } else {
+    const idx = ST.chartDefs.push(def) - 1;
+    mountChartPanel(def, idx);
+    drawChart(def, idx);
+  }
+}
+
+function mountChartPanel(def, idx) {
+  const main = $('main-area');
+  const ph = main.querySelector('[data-placeholder]');
+  if(ph) ph.remove();
+
+  const width = def.width || 'full';
+  const panel = document.createElement('div');
+  panel.className = 'chart-panel ' + width;
+  panel.dataset.chartIdx = idx;
+  panel.innerHTML = `
+    <div class="chart-panel-header">
+      <span class="chart-panel-title">${def.title}</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <div class="width-toggle">
+          <button class="width-btn ${width==='half'?'active':''}" onclick="setChartWidth(${idx},'half')" title="Half width">½</button>
+          <button class="width-btn ${width==='full'?'active':''}" onclick="setChartWidth(${idx},'full')" title="Full width">▬</button>
+        </div>
+        <button class="btn btn-ghost btn-xs" onclick="openChartModal('${def.type}', ${idx})">Edit</button>
+        <button class="btn btn-danger btn-xs" onclick="removeChart(${idx})">Remove</button>
+      </div>
+    </div>
+    <div class="chart-panel-body" id="cpb-${idx}"></div>`;
+  main.appendChild(panel);
+}
+
+function setChartWidth(idx, width) {
+  ST.chartDefs[idx].width = width;
+  const panel = document.querySelector('[data-chart-idx="'+idx+'"]');
+  if(!panel) return;
+  panel.className = 'chart-panel ' + width;
+  // update toggle button states
+  const btns = panel.querySelectorAll('.width-btn');
+  btns[0].classList.toggle('active', width === 'half');
+  btns[1].classList.toggle('active', width === 'full');
+}
+
+function reDrawChart(idx) {
+  const def   = ST.chartDefs[idx];
+  const panel = document.querySelector(`[data-chart-idx="${idx}"]`);
+  if(!panel) return;
+  panel.querySelector('.chart-panel-title').textContent = def.title;
+  panel.className = 'chart-panel ' + (def.width || 'full');
+  const body = $('cpb-'+idx);
+  body.innerHTML = '';
+  if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} delete ST.chartInstances[idx]; }
+  drawChart(def, idx);
+}
+
+function removeChart(idx) {
+  const panel = document.querySelector(`[data-chart-idx="${idx}"]`);
+  if(panel) panel.remove();
+  if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} }
+  ST.chartInstances[idx] = null;
+  ST.chartDefs[idx] = null;
+  if(!$('main-area').querySelector('.chart-panel')) {
+    $('main-area').innerHTML = '<div data-placeholder style="color:var(--muted);font-size:13px;text-align:center;padding:60px 0;">Use the sidebar to add your first chart.</div>';
+  }
+}
+
+function drawChart(def, idx) {
+  const body = $('cpb-'+idx);
+  if(!body) return;
+  const segs = def.segments.map(s => ({ ...s, records: resolveSegment(s) }));
+  switch(def.type) {
+    case 'bar':         drawBar(body, idx, segs); break;
+    case 'stacked-bar': drawStackedBar(body, idx, segs); break;
+    case 'line':        drawLine(body, idx, def, segs); break;
+    case 'pie':         drawPie(body, idx, segs); break;
+    case 'wordcloud':   drawWordCloud(body, idx, def, segs); break;
+  }
+}
+
+// ════════════════════════════════════════════════
+// PDF EXPORT
+// ════════════════════════════════════════════════
+function exportPDF() {
+  // Populate print header
+  const searches = ST.selectedSearches.map(s => s.name).join(', ');
+  const total    = getAllRecords().length;
+  $('print-title').textContent = 'Pulsar Analytics — ' + (ST.selectedSearches.length > 1 ? ST.selectedSearches.length + ' searches' : ST.selectedSearches[0]?.name || 'Dashboard');
+  $('print-meta').textContent  = total.toLocaleString() + ' records · ' + ST.dateFrom + ' to ' + ST.dateTo + ' · Generated ' + new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+
+  // Charts need a moment to render at print size — trigger after short delay
+  setTimeout(() => window.print(), 150);
+}
+
+// ════════════════════════════════════════════════
+// MENTIONS DRAWER
+// ════════════════════════════════════════════════
+function openMentions(segLabel, records) {
+  $('mentions-title').textContent = segLabel;
+  $('mentions-meta').textContent  = records.length.toLocaleString() + ' mentions matching filter';
+  const list = $('mentions-list');
+  list.innerHTML = '';
+
+  if(!records.length) {
+    list.innerHTML = '<div class="mentions-empty">No mentions match this filter.</div>';
+    $('mentions-overlay').classList.add('open');
+    return;
+  }
+
+  // Sort newest first
+  const sorted = [...records].sort((a,b) => new Date(b.publishedAt||0) - new Date(a.publishedAt||0));
+
+  sorted.forEach(rec => {
+    const sentRaw = parseFloat(rec.sentiment);
+    const sentLabel = !isNaN(sentRaw)
+      ? (sentRaw > 0.1 ? 'positive' : sentRaw < -0.1 ? 'negative' : 'neutral')
+      : (rec.sentiment||'neutral').toLowerCase();
+
+    const dateStr = rec.publishedAt
+      ? new Date(rec.publishedAt).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+      : '';
+
+    const title   = rec.title   || rec.userScreenName || rec.domainName || 'Untitled';
+    const snippet = rec.content || '';
+    const source  = fmtSource(rec.source || '');
+
+    const card = document.createElement('div');
+    card.className = 'mention-card';
+    card.innerHTML = `
+      <div class="mention-title">${escHtml(title)}</div>
+      ${snippet ? `<div class="mention-content">${escHtml(snippet)}</div>` : ''}
+      <div class="mention-meta">
+        ${source ? `<span class="mention-tag source">${escHtml(source)}</span>` : ''}
+        ${sentLabel ? `<span class="mention-tag sentiment-${sentLabel}">${sentLabel}</span>` : ''}
+        ${dateStr  ? `<span class="mention-tag date">${dateStr}</span>` : ''}
+        ${rec.domainName ? `<span class="mention-tag date">${escHtml(rec.domainName)}</span>` : ''}
+        ${rec.url ? `<a class="mention-link" href="${escHtml(rec.url)}" target="_blank" rel="noopener">View →</a>` : ''}
+      </div>`;
+    list.appendChild(card);
+  });
+
+  $('mentions-overlay').classList.add('open');
+}
+
+function closeMentions(e) {
+  if(e.target === $('mentions-overlay')) closeMentionsBtn();
+}
+function closeMentionsBtn() {
+  $('mentions-overlay').classList.remove('open');
+}
+
+function escHtml(str) {
+  return (str||'').toString().replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+// ════════════════════════════════════════════════
+// CHART DRAWING
+// ════════════════════════════════════════════════
+const TOOLTIP = { backgroundColor:'#111E35',borderColor:'#1E2F4A',borderWidth:1,titleColor:'#E2E8F0',bodyColor:'#94a3b8',padding:10 };
+const SCALES  = {
+  x: { ticks:{color:'#64748B',font:{size:11}}, grid:{color:'#1E2F4A'} },
+  y: { ticks:{color:'#64748B',font:{size:11}}, grid:{color:'#1E2F4A'}, beginAtZero:true },
+};
+
+function mkCanvas(body, h=300) {
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'position:relative;width:100%;height:' + h + 'px;';
+  const c = document.createElement('canvas');
+  wrap.appendChild(c);
+  body.appendChild(wrap);
+  return c;
+}
+
+function mkLegend(body, segs) {
+  // Clickable legend items that open mentions
+  const el = document.createElement('div');
+  el.className = 'chart-legend';
+  segs.forEach(s => {
+    const item = document.createElement('div');
+    item.className = 'legend-item';
+    item.style.cssText = 'cursor:pointer;padding:3px 6px;border-radius:2px;transition:background .15s;';
+    item.title = 'Click to view mentions';
+    item.innerHTML = `<div class="legend-dot" style="background:${s.color}"></div>
+      ${escHtml(s.label)}: <strong style="color:var(--text);margin-left:3px;">${s.records.length.toLocaleString()}</strong>`;
+    item.addEventListener('click', () => openMentions(s.label, s.records));
+    item.addEventListener('mouseenter', () => item.style.background='rgba(0,212,180,.06)');
+    item.addEventListener('mouseleave', () => item.style.background='');
+    el.appendChild(item);
+  });
+  body.appendChild(el);
+  const hint = document.createElement('div');
+  hint.style.cssText='font-size:10px;color:var(--muted);margin-top:4px;';
+  hint.textContent='Click a segment or legend item to view mentions';
+  body.appendChild(hint);
+}
+
+function destroyChart(idx) {
+  if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} }
+}
+
+// ── BAR ──
+function drawBar(body, idx, segs) {
+  const horizontal = segs.length > 7;
+  const h = horizontal ? Math.max(300, segs.length * 32) : 300;
+  const canvas = mkCanvas(body, h);
+
+  destroyChart(idx);
+  ST.chartInstances[idx] = new Chart(canvas, {
+    type: 'bar',
+    data: {
+      labels:   segs.map(s => s.label),
+      datasets: [{ data: segs.map(s => s.records.length), backgroundColor: segs.map(s => s.color), borderWidth:0, borderRadius:2 }]
+    },
+    options: {
+      responsive:true, maintainAspectRatio:false,
+      indexAxis: horizontal ? 'y' : 'x',
+      onClick: (_e, els) => {
+        if(els.length) openMentions(segs[els[0].index].label, segs[els[0].index].records);
+      },
+      plugins: { legend:{display:false}, tooltip:TOOLTIP },
+      scales: SCALES,
+    }
+  });
+  canvas.style.cursor = 'pointer';
+  mkLegend(body, segs);
+}
+
+// ── STACKED BAR ──
+function drawStackedBar(body, idx, segs) {
+  const canvas = mkCanvas(body, 260);
+
+  // Build per-sentiment datasets; also store records per seg per sentiment for drill-down
+  const posRecs=[], neuRecs=[], negRecs=[];
+  const posD=[], neuD=[], negD=[];
+  segs.forEach(s => {
+    const pos=[], neu=[], neg=[];
+    s.records.forEach(r => {
+      const l = sentimentLabel(r);
+      if(l==='positive') pos.push(r); else if(l==='negative') neg.push(r); else neu.push(r);
+    });
+    posRecs.push(pos); neuRecs.push(neu); negRecs.push(neg);
+    posD.push(pos.length); neuD.push(neu.length); negD.push(neg.length);
+  });
+
+  const sentData = [
+    {label:'Positive', data:posD, recs:posRecs, bg:'#22c55e'},
+    {label:'Neutral',  data:neuD, recs:neuRecs, bg:'#94a3b8'},
+    {label:'Negative', data:negD, recs:negRecs, bg:'#ef4444'},
+  ];
+
+  destroyChart(idx);
+  ST.chartInstances[idx] = new Chart(canvas, {
+    type:'bar',
+    data:{ labels:segs.map(s=>s.label), datasets: sentData.map(d=>({label:d.label,data:d.data,backgroundColor:d.bg,borderWidth:0})) },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      onClick: (_e, els) => {
+        if(!els.length) return;
+        const el = els[0];
+        const segIdx  = el.index;
+        const sentIdx = el.datasetIndex;
+        const recs    = sentData[sentIdx].recs[segIdx];
+        openMentions(segs[segIdx].label + ' — ' + sentData[sentIdx].label, recs);
+      },
+      plugins:{ legend:{display:false}, tooltip:TOOLTIP },
+      scales:{ x:{stacked:true,...SCALES.x}, y:{stacked:true,...SCALES.y} }
+    }
+  });
+  canvas.style.cursor='pointer';
+
+  const legEl = document.createElement('div');
+  legEl.className='chart-legend';
+  legEl.style.marginTop='8px';
+  sentData.forEach((d,si) => {
+    segs.forEach((s,gi) => {
+      const item = document.createElement('div');
+      item.className='legend-item';
+      item.style.cssText='cursor:pointer;padding:3px 6px;border-radius:2px;transition:background .15s;';
+      item.innerHTML=`<div class="legend-dot" style="background:${d.bg}"></div>${escHtml(s.label)} ${d.label}: <strong style="color:var(--text);margin-left:2px;">${d.recs[gi].length.toLocaleString()}</strong>`;
+      item.addEventListener('click',()=>openMentions(s.label+' — '+d.label, d.recs[gi]));
+      item.addEventListener('mouseenter',()=>item.style.background='rgba(0,212,180,.06)');
+      item.addEventListener('mouseleave',()=>item.style.background='');
+      legEl.appendChild(item);
+    });
+  });
+  body.appendChild(legEl);
+  const hint=document.createElement('div');
+  hint.style.cssText='font-size:10px;color:var(--muted);margin-top:4px;';
+  hint.textContent='Click a bar segment or legend item to view mentions';
+  body.appendChild(hint);
+}
+
+// ── LINE ──
+function drawLine(body, idx, def, segs) {
+  const gran   = def.granularity || 'month';
+  const canvas = mkCanvas(body, 260);
+
+  function bucket(ds) {
+    const d = new Date(ds);
+    if(isNaN(d)) return null;
+    if(gran==='day')  return d.toISOString().slice(0,10);
+    if(gran==='week') {
+      const day=d.getDay(), diff=d.getDate()-day+(day===0?-6:1);
+      const nd=new Date(d); nd.setDate(diff); return nd.toISOString().slice(0,10);
+    }
+    return d.toISOString().slice(0,7);
+  }
+
+  // Build bucket map per seg
+  const segBuckets = segs.map(s => {
+    const map = {};
+    s.records.forEach(r => {
+      const b = bucket(r.publishedAt);
+      if(b) { if(!map[b]) map[b]=[]; map[b].push(r); }
+    });
+    return map;
+  });
+
+  const allBuckets = [...new Set(segBuckets.flatMap(m => Object.keys(m)))].sort();
+
+  const datasets = segs.map((s,i) => ({
+    label: s.label,
+    data:  allBuckets.map(b => (segBuckets[i][b]||[]).length),
+    borderColor: s.color, backgroundColor: s.color+'20',
+    borderWidth:2, pointRadius:3, tension:0.3, fill:false
+  }));
+
+  const fmtB = b => {
+    const d = new Date(b+'T00:00:00Z');
+    if(gran==='day')  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    if(gran==='week') return 'w/c '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    return d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});
+  };
+
+  destroyChart(idx);
+  ST.chartInstances[idx] = new Chart(canvas, {
+    type:'line', data:{ labels:allBuckets.map(fmtB), datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      onClick: (_e, els) => {
+        if(!els.length) return;
+        const el     = els[0];
+        const segIdx = el.datasetIndex;
+        const bkt    = allBuckets[el.index];
+        const recs   = segBuckets[segIdx][bkt] || [];
+        openMentions(segs[segIdx].label + ' — ' + fmtB(bkt), recs);
+      },
+      plugins:{ legend:{display:false}, tooltip:{...TOOLTIP, mode:'index', intersect:false} },
+      scales:{ x:{...SCALES.x, ticks:{...SCALES.x.ticks,maxTicksLimit:14}}, y:SCALES.y }
+    }
+  });
+  canvas.style.cursor='pointer';
+  mkLegend(body, segs);
+}
+
+// ── PIE / DONUT ──
+function drawPie(body, idx, segs) {
+  const wrap=document.createElement('div');
+  wrap.style.cssText='display:flex;gap:24px;align-items:center;flex-wrap:wrap;overflow:hidden;';
+  const cw=document.createElement('div');
+  cw.style.cssText='width:220px;height:220px;flex-shrink:0;';
+  const canvas=document.createElement('canvas');
+  cw.appendChild(canvas);
+  const legEl=document.createElement('div');
+  legEl.style.cssText='display:flex;flex-direction:column;gap:6px;flex:1;';
+  wrap.appendChild(cw); wrap.appendChild(legEl); body.appendChild(wrap);
+
+  const data  = segs.map(s => s.records.length);
+  const total = data.reduce((a,b)=>a+b,0);
+
+  segs.forEach((s,i) => {
+    const pct = total ? ((data[i]/total)*100).toFixed(1) : '0';
+    const item = document.createElement('div');
+    item.className='legend-item';
+    item.style.cssText='cursor:pointer;padding:3px 6px;border-radius:2px;transition:background .15s;';
+    item.innerHTML=`<div class="legend-dot" style="background:${s.color}"></div>${escHtml(s.label)}: <strong style="color:var(--text);margin:0 3px;">${data[i].toLocaleString()}</strong><span style="color:var(--muted)">(${pct}%)</span>`;
+    item.addEventListener('click',()=>openMentions(s.label, s.records));
+    item.addEventListener('mouseenter',()=>item.style.background='rgba(0,212,180,.06)');
+    item.addEventListener('mouseleave',()=>item.style.background='');
+    legEl.appendChild(item);
+  });
+
+  const hint=document.createElement('div');
+  hint.style.cssText='font-size:10px;color:var(--muted);margin-top:4px;';
+  hint.textContent='Click a slice or legend item to view mentions';
+  legEl.appendChild(hint);
+
+  destroyChart(idx);
+  ST.chartInstances[idx] = new Chart(canvas, {
+    type:'doughnut',
+    data:{ labels:segs.map(s=>s.label), datasets:[{ data, backgroundColor:segs.map(s=>s.color), borderWidth:0 }] },
+    options:{
+      responsive:true, maintainAspectRatio:false, cutout:'60%',
+      onClick: (_e, els) => { if(els.length) openMentions(segs[els[0].index].label, segs[els[0].index].records); },
+      plugins:{ legend:{display:false}, tooltip:{...TOOLTIP, callbacks:{label:ctx=>` ${ctx.raw.toLocaleString()} (${total?((ctx.raw/total)*100).toFixed(1):0}%)`}} }
+    }
+  });
+  canvas.style.cursor='pointer';
+}
+
+// ── WORD CLOUD ──
+function drawWordCloud(body, idx, def, segs) {
+  const field  = def.wcField || 'keywords';
+  // Count across all segments; track which records contain each word for drill-down
+  const wordRecs = {};
+  segs.forEach(s => {
+    s.records.forEach(r => {
+      const words = Array.isArray(r[field]) ? r[field] : [];
+      words.forEach(w => {
+        const wl = (w||'').toString().toLowerCase().trim();
+        if(wl && wl.length>2) {
+          if(!wordRecs[wl]) wordRecs[wl]=[];
+          wordRecs[wl].push(r);
+        }
+      });
+    });
+  });
+
+  const sorted = Object.entries(wordRecs).sort((a,b)=>b[1].length-a[1].length).slice(0,80);
+  const wrap = document.createElement('div');
+  wrap.className = 'wordcloud-wrap';
+  wrap.style.cssText = 'max-height:300px;overflow-y:auto;';
+
+  if(!sorted.length) {
+    wrap.innerHTML='<span style="color:var(--muted);">No data for this field.</span>';
+    body.appendChild(wrap); return;
+  }
+
+  const max=sorted[0][1].length, min=sorted[sorted.length-1][1].length;
+  const scale = c => min===max ? 18 : 11 + Math.round(((c-min)/(max-min))*26);
+
+  sorted.forEach(([word, recs], i) => {
+    const span=document.createElement('span');
+    span.className='wc-word';
+    span.textContent=word;
+    span.title=`${word}: ${recs.length.toLocaleString()} mentions — click to view`;
+    span.style.cssText=`font-size:${scale(recs.length)}px;color:${PALETTE[i%PALETTE.length]};opacity:${(0.55+0.45*(recs.length/max)).toFixed(2)};cursor:pointer;`;
+    span.addEventListener('click',()=>openMentions('"'+word+'"', recs));
+    wrap.appendChild(span);
+  });
+  body.appendChild(wrap);
+
+  const legEl=document.createElement('div');
+  legEl.className='chart-legend';
+  legEl.style.marginTop='8px';
+  sorted.slice(0,10).forEach(([w,recs],i)=>{
+    const item=document.createElement('div');
+    item.className='legend-item';
+    item.style.cssText='cursor:pointer;padding:2px 5px;border-radius:2px;transition:background .15s;';
+    item.innerHTML=`<div class="legend-dot" style="background:${PALETTE[i%PALETTE.length]}"></div>${escHtml(w)} <span style="color:var(--muted)">(${recs.length.toLocaleString()})</span>`;
+    item.addEventListener('click',()=>openMentions('"'+w+'"',recs));
+    item.addEventListener('mouseenter',()=>item.style.background='rgba(0,212,180,.06)');
+    item.addEventListener('mouseleave',()=>item.style.background='');
+    legEl.appendChild(item);
+  });
+  body.appendChild(legEl);
+  const hint=document.createElement('div');
+  hint.style.cssText='font-size:10px;color:var(--muted);margin-top:4px;';
+  hint.textContent='Click any word to view matching mentions';
+  body.appendChild(hint);
+}
+
+</script>
+
+<!-- MENTIONS DRAWER -->
+<div class="mentions-overlay" id="mentions-overlay" onclick="closeMentions(event)">
+  <div class="mentions-drawer">
+    <div class="mentions-drawer-header">
+      <div>
+        <h2 id="mentions-title">Mentions</h2>
+        <div class="mentions-drawer-meta" id="mentions-meta"></div>
+      </div>
+      <button class="btn-icon" onclick="closeMentionsBtn()" style="font-size:18px;">✕</button>
+    </div>
+    <div class="mentions-list" id="mentions-list"></div>
+  </div>
+</div>
+
+</body>
+</html>

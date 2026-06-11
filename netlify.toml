@@ -1,0 +1,13 @@
+[build]
+  publish = "."
+  functions = "netlify/functions"
+
+[[redirects]]
+  from = "/trac"
+  to   = "/.netlify/functions/trac"
+  status = 200
+
+[[redirects]]
+  from = "/data"
+  to   = "/.netlify/functions/data"
+  status = 200
