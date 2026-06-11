@@ -1367,7 +1367,7 @@ function readSegments() {
 // ════════════════════════════════════════════════
 // BUILD / RENDER CHARTS
 // ════════════════════════════════════════════════
-function buildChart() {
+async function buildChart() {
   const segs = readSegments();
   if(!segs.length) { alert('Add at least one segment.'); return; }
   const selectedWidth = document.querySelector('input[name="m-width"]:checked')?.value || 'full';
