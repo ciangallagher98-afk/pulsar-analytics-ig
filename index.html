@@ -129,6 +129,19 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 .width-toggle{display:flex;gap:4px;}
 .width-btn{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 8px;font-size:10px;letter-spacing:.04em;}
 .width-btn.active{border-color:var(--teal);color:var(--teal);}
+/* chart action menu */
+.chart-actions-menu{position:absolute;right:0;top:100%;background:var(--surface);border:1px solid var(--border);border-radius:3px;z-index:50;min-width:160px;box-shadow:0 4px 16px rgba(0,0,0,.4);display:none;}
+.chart-actions-menu.open{display:block;}
+.chart-menu-item{display:block;width:100%;text-align:left;padding:8px 14px;font-size:12px;color:var(--text);background:transparent;border:none;cursor:pointer;font-family:var(--font);transition:background .1s;}
+.chart-menu-item:hover{background:rgba(0,212,180,.06);color:var(--teal);}
+.chart-menu-item.danger{color:var(--neg);}
+.chart-menu-item.danger:hover{background:rgba(239,68,68,.06);}
+.chart-menu-divider{height:1px;background:var(--border);margin:4px 0;}
+.chart-header-right{display:flex;gap:6px;align-items:center;position:relative;}
+/* orientation toggle */
+.orient-toggle{display:flex;gap:2px;}
+.orient-btn{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 7px;font-size:11px;cursor:pointer;transition:all .15s;font-family:var(--font);}
+.orient-btn.active{border-color:var(--teal);color:var(--teal);}
 /* mentions drawer */
 .mentions-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:300;}
 .mentions-overlay.open{display:flex;align-items:flex-start;justify-content:flex-end;}
@@ -388,6 +401,7 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
     <input type="text" class="session-name-input" id="session-name-input" placeholder="Name this session..." maxlength="60" />
     <button class="btn btn-ghost btn-sm" onclick="saveSession()">Save</button>
     <span class="session-save-indicator" id="save-indicator">✓ Saved</span>
+    <button class="btn btn-ghost btn-sm" id="reingest-btn" onclick="reIngestSession()" title="Re-pull data from Pulsar for the saved date range">↻ Re-ingest</button>
     <div style="flex:1;"></div>
     <span class="session-size-warn" id="session-size-warn"></span>
     <button class="btn btn-ghost btn-sm" onclick="openSessionsModal()">Saved sessions</button>
@@ -395,8 +409,8 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 
   <!-- REINGEST BANNER (shown when session loaded without records) -->
   <div class="reingest-banner hidden" id="reingest-banner">
-    <span>⚠ This session was saved without record data — charts are restored but the feed and segment drill-downs are empty.</span>
-    <button class="btn btn-primary btn-sm" onclick="reIngestSession()">Re-ingest data now</button>
+    <span>⚠ No data found for this session in this browser — charts are restored but feed and drill-downs are empty.</span>
+    <button class="btn btn-primary btn-sm" onclick="reIngestSession()">Load data now</button>
     <button class="btn-icon" onclick="$('reingest-banner').classList.add('hidden')" style="margin-left:auto;" title="Dismiss">✕</button>
   </div>
 
@@ -452,6 +466,7 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
           <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('line')">＋ Line chart (over time)</button>
           <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('pie')">＋ Pie / donut chart</button>
           <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('wordcloud')">＋ Word cloud</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('topsites')">＋ Top sites</button>
         </div>
       </div>
     </div>
@@ -555,6 +570,19 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
           <option value="week">Weekly</option>
           <option value="month" selected>Monthly</option>
         </select>
+      </div>
+      <div id="m-topsites-row" class="form-row hidden">
+        <label>Rank sites by</label>
+        <select id="m-topsites-metric">
+          <option value="count">Volume (number of articles)</option>
+          <option value="mediaImpressions">Media impressions</option>
+          <option value="mediaReach">Media reach</option>
+          <option value="engagement">Engagement</option>
+        </select>
+        <div style="margin-top:8px;">
+          <label>Number of sites to show</label>
+          <input type="number" id="m-topsites-limit" value="15" min="5" max="50" style="width:80px;" />
+        </div>
       </div>
       <div id="m-wc-row" class="form-row hidden">
         <label>Word source field</label>
@@ -997,7 +1025,7 @@ const RESULTS_Q = `
       results {
         title content publishedAt url domainName source
         userScreenName sentiment emotion engagement
-        impressions language countryCode
+        impressions mediaReach mediaImpressions language countryCode
         topics keywords entities
       }
     }
@@ -1309,16 +1337,20 @@ function openChartModal(type, editIdx = null) {
   $('segment-list').innerHTML = '';
   $('m-gran-row').classList.add('hidden');
   $('m-wc-row').classList.add('hidden');
+  $('m-topsites-row').classList.add('hidden');
   $('m-stack-row').classList.add('hidden');
   $('m-standard-row').classList.remove('hidden');
   $('sb-bar-list').innerHTML  = '';
   $('sb-seg-list').innerHTML  = '';
 
-  const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud' };
+  const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud',topsites:'Top sites' };
   $('modal-title').textContent = titles[type] || 'Chart';
 
   if(type === 'line')        $('m-gran-row').classList.remove('hidden');
   if(type === 'wordcloud')   $('m-wc-row').classList.remove('hidden');
+  if(type === 'topsites') {
+    $('m-topsites-row').classList.remove('hidden');
+  }
   if(type === 'stacked-bar') {
     $('m-stack-row').classList.remove('hidden');
     $('m-standard-row').classList.add('hidden');
@@ -1332,6 +1364,10 @@ function openChartModal(type, editIdx = null) {
     if(type === 'stacked-bar') {
       (def.stackBars || []).forEach(b => addStackBar(b));
       (def.stackSegs || []).forEach(s => addStackSeg(s));
+    }
+    if(type === 'topsites') {
+      if(def.sitesMetric) $('m-topsites-metric').value = def.sitesMetric;
+      if(def.sitesLimit)  $('m-topsites-limit').value  = def.sitesLimit;
     }
     // Restore width radio
     const wval = def.width || 'full';
@@ -1428,17 +1464,22 @@ function readSegments() {
 // ════════════════════════════════════════════════
 async function buildChart() {
   const segs = readSegments();
-  if(!segs.length) { alert('Add at least one segment.'); return; }
+  // topsites doesn't need segments
+  if(ST.modalType !== 'topsites' && !segs.length) { alert('Add at least one segment.'); return; }
   const selectedWidth = document.querySelector('input[name="m-width"]:checked')?.value || 'full';
+  const def_ = ST.editingIdx !== null ? ST.chartDefs[ST.editingIdx] : null;
   const def = {
-    title:       $('m-title').value || 'Chart',
-    type:        ST.modalType,
-    segments:    segs,
-    granularity: $('m-gran').value,
-    wcField:     $('m-wc-field').value,
-    width:       selectedWidth,
-    stackBars:   readStackBars(),
-    stackSegs:   readStackSegs(),
+    title:        $('m-title').value || 'Chart',
+    type:         ST.modalType,
+    segments:     segs,
+    granularity:  $('m-gran').value,
+    wcField:      $('m-wc-field').value,
+    width:        selectedWidth,
+    stackBars:    readStackBars(),
+    stackSegs:    readStackSegs(),
+    sitesMetric:  $('m-topsites-metric').value,
+    sitesLimit:   parseInt($('m-topsites-limit').value) || 15,
+    orientation:  def_?.orientation || 'vertical', // preserve if re-editing
   };
   closeModal();
 
@@ -1456,27 +1497,66 @@ async function buildChart() {
 
 function mountChartPanel(def, idx) {
   const main = $('main-area');
-  const ph = main.querySelector('[data-placeholder]');
+  const ph   = main.querySelector('[data-placeholder]');
   if(ph) ph.remove();
 
-  const width = def.width || 'full';
+  const width  = def.width || 'full';
+  const orient = def.orientation || 'vertical';
+  const showOrient = ['bar','topsites'].includes(def.type);
+
   const panel = document.createElement('div');
   panel.className = 'chart-panel ' + width;
   panel.dataset.chartIdx = idx;
   panel.innerHTML = `
     <div class="chart-panel-header">
-      <span class="chart-panel-title">${def.title}</span>
-      <div style="display:flex;gap:6px;align-items:center;">
+      <span class="chart-panel-title">${escHtml(def.title)}</span>
+      <div class="chart-header-right">
+        <!-- Orientation toggle (bar + topsites only) -->
+        ${showOrient ? `<div class="orient-toggle">
+          <button class="orient-btn ${orient==='vertical'?'active':''}" onclick="setOrientation(${idx},'vertical')" title="Vertical">↕</button>
+          <button class="orient-btn ${orient==='horizontal'?'active':''}" onclick="setOrientation(${idx},'horizontal')" title="Horizontal">↔</button>
+        </div>` : ''}
+        <!-- Width toggle -->
         <div class="width-toggle">
           <button class="width-btn ${width==='half'?'active':''}" onclick="setChartWidth(${idx},'half')" title="Half width">½</button>
           <button class="width-btn ${width==='full'?'active':''}" onclick="setChartWidth(${idx},'full')" title="Full width">▬</button>
         </div>
-        <button class="btn btn-ghost btn-xs" onclick="openChartModal('${def.type}', ${idx})">Edit</button>
-        <button class="btn btn-danger btn-xs" onclick="removeChart(${idx})">Remove</button>
+        <!-- ⋮ menu -->
+        <button class="btn btn-ghost btn-xs" onclick="toggleChartMenu(${idx}, event)">⋮</button>
+        <div class="chart-actions-menu" id="chart-menu-${idx}">
+          <button class="chart-menu-item" onclick="openChartModal('${def.type}', ${idx}); closeAllMenus()">✏️ Edit chart</button>
+          <button class="chart-menu-item" onclick="duplicateChart(${idx}); closeAllMenus()">⧉ Duplicate</button>
+          <div class="chart-menu-divider"></div>
+          <div style="padding:6px 14px 4px; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em;">Change type</div>
+          ${['bar','line','pie','stacked-bar','wordcloud','topsites'].filter(t=>t!==def.type).map(t=>
+            `<button class="chart-menu-item" onclick="changeChartType(${idx},'${t}'); closeAllMenus()">${chartTypeLabel(t)}</button>`
+          ).join('')}
+          <div class="chart-menu-divider"></div>
+          <button class="chart-menu-item danger" onclick="removeChart(${idx}); closeAllMenus()">✕ Remove</button>
+        </div>
       </div>
     </div>
     <div class="chart-panel-body" id="cpb-${idx}"></div>`;
   main.appendChild(panel);
+
+  // Close menu when clicking outside
+  document.addEventListener('click', closeAllMenus, { once: false });
+}
+
+function chartTypeLabel(t) {
+  return { bar:'↕ Bar chart', line:'↗ Line chart', pie:'◕ Pie chart',
+    'stacked-bar':'▥ Stacked bar', wordcloud:'☁ Word cloud', topsites:'🌐 Top sites' }[t] || t;
+}
+
+function toggleChartMenu(idx, e) {
+  e.stopPropagation();
+  closeAllMenus();
+  const menu = $('chart-menu-' + idx);
+  if(menu) menu.classList.toggle('open');
+}
+
+function closeAllMenus() {
+  document.querySelectorAll('.chart-actions-menu.open').forEach(m => m.classList.remove('open'));
 }
 
 function setChartWidth(idx, width) {
@@ -1484,10 +1564,45 @@ function setChartWidth(idx, width) {
   const panel = document.querySelector('[data-chart-idx="'+idx+'"]');
   if(!panel) return;
   panel.className = 'chart-panel ' + width;
-  // update toggle button states
-  const btns = panel.querySelectorAll('.width-btn');
-  btns[0].classList.toggle('active', width === 'half');
-  btns[1].classList.toggle('active', width === 'full');
+  panel.querySelectorAll('.width-btn').forEach((b, i) => b.classList.toggle('active', i===(width==='half'?0:1)));
+}
+
+function setOrientation(idx, orient) {
+  ST.chartDefs[idx].orientation = orient;
+  const panel = document.querySelector('[data-chart-idx="'+idx+'"]');
+  if(panel) {
+    panel.querySelectorAll('.orient-btn').forEach((b, i) => b.classList.toggle('active', i===(orient==='vertical'?0:1)));
+  }
+  reDrawChart(idx);
+  autoSaveCharts();
+}
+
+async function duplicateChart(idx) {
+  const orig = ST.chartDefs[idx];
+  if(!orig) return;
+  // Deep clone the def
+  const clone = JSON.parse(JSON.stringify(orig));
+  clone.title = clone.title + ' (copy)';
+  const newIdx = ST.chartDefs.push(clone) - 1;
+  mountChartPanel(clone, newIdx);
+  await drawChart(clone, newIdx);
+  autoSaveCharts();
+}
+
+async function changeChartType(idx, newType) {
+  const def = ST.chartDefs[idx];
+  if(!def) return;
+  def.type = newType;
+  // Reset type-specific settings
+  if(newType === 'stacked-bar') { def.stackBars = def.stackBars||[]; def.stackSegs = def.stackSegs||[]; }
+  if(newType === 'topsites')    { def.sitesMetric = def.sitesMetric||'count'; def.sitesLimit = def.sitesLimit||15; }
+  // Remount panel (updates the menu) and redraw
+  const panel = document.querySelector('[data-chart-idx="'+idx+'"]');
+  if(panel) panel.remove();
+  if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} delete ST.chartInstances[idx]; }
+  mountChartPanel(def, idx);
+  await drawChart(def, idx);
+  autoSaveCharts();
 }
 
 async function reDrawChart(idx) {
@@ -1518,21 +1633,24 @@ async function drawChart(def, idx) {
   const body = $('cpb-'+idx);
   if(!body) return;
 
-  // Show loading state while querying IndexedDB
   body.innerHTML = '<div style="display:flex;align-items:center;gap:10px;padding:20px;color:var(--muted);font-size:12px;"><div class="spinner"></div>Querying data...</div>';
 
-  // Resolve all segments in parallel from IndexedDB
-  const segs = await Promise.all(
-    def.segments.map(async s => ({ ...s, records: await resolveSegment(s) }))
-  );
+  // topsites queries IndexedDB itself; others resolve segments
+  let segs = [];
+  if(!['stacked-bar','topsites'].includes(def.type)) {
+    segs = await Promise.all(
+      (def.segments||[]).map(async s => ({ ...s, records: await resolveSegment(s) }))
+    );
+  }
 
   body.innerHTML = '';
   switch(def.type) {
-    case 'bar':         drawBar(body, idx, segs); break;
+    case 'bar':         drawBar(body, idx, def, segs); break;
     case 'stacked-bar': await drawStackedBar(body, idx, def); break;
     case 'line':        drawLine(body, idx, def, segs); break;
     case 'pie':         drawPie(body, idx, segs); break;
     case 'wordcloud':   drawWordCloud(body, idx, def, segs); break;
+    case 'topsites':    await drawTopSites(body, idx, def); break;
   }
 }
 
@@ -1970,15 +2088,22 @@ function buildFeedCard(rec, searchMap, boolExpr = '') {
 // ════════════════════════════════════════════════
 // PDF EXPORT
 // ════════════════════════════════════════════════
-function exportPDF() {
-  // Populate print header
-  const searches = ST.selectedSearches.map(s => s.name).join(', ');
-  const total    = getAllRecords().length;
-  $('print-title').textContent = 'Pulsar Analytics — ' + (ST.selectedSearches.length > 1 ? ST.selectedSearches.length + ' searches' : ST.selectedSearches[0]?.name || 'Dashboard');
-  $('print-meta').textContent  = total.toLocaleString() + ' records · ' + ST.dateFrom + ' to ' + ST.dateTo + ' · Generated ' + new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+async function exportPDF() {
+  // Get total from IndexedDB (getAllRecords no longer exists)
+  const sessionId = ST.currentSessionId;
+  const total     = sessionId ? await dbTotalCount(sessionId) : 0;
 
-  // Charts need a moment to render at print size — trigger after short delay
-  setTimeout(() => window.print(), 150);
+  $('print-title').textContent = 'Pulsar Analytics — ' +
+    (ST.selectedSearches.length > 1
+      ? ST.selectedSearches.length + ' searches'
+      : ST.selectedSearches[0]?.name || 'Dashboard');
+  $('print-meta').textContent = total.toLocaleString() + ' records · ' +
+    (ACTIVE_DATE.from || ST.dateFrom) + ' to ' +
+    (ACTIVE_DATE.to   || ST.dateTo)  + ' · Generated ' +
+    new Date().toLocaleDateString('en-GB',{day:'numeric',month:'long',year:'numeric'});
+
+  // Give charts a moment to render at print dimensions
+  setTimeout(() => window.print(), 200);
 }
 
 // ════════════════════════════════════════════════
@@ -2192,8 +2317,8 @@ function destroyChart(idx) {
 }
 
 // ── BAR ──
-function drawBar(body, idx, segs) {
-  const horizontal = segs.length > 7;
+function drawBar(body, idx, def, segs) {
+  const horizontal = def.orientation === 'horizontal' || (!def.orientation && segs.length > 7);
   const h = horizontal ? Math.max(300, segs.length * 32) : 300;
   const canvas = mkCanvas(body, h);
 
@@ -2567,6 +2692,95 @@ function drawPie(body, idx, segs) {
     }
   });
   canvas.style.cursor='pointer';
+}
+
+// ── TOP SITES ──
+async function drawTopSites(body, idx, def) {
+  const sessionId = ST.currentSessionId;
+  if(!sessionId) return;
+
+  const metric  = def.sitesMetric || 'count';
+  const limit   = def.sitesLimit  || 15;
+  const segs    = def.segments || [];
+  const horizontal = def.orientation !== 'vertical';
+
+  // Build filter from first segment if present (allows boolean/sentiment/domain filtering)
+  const filter = {
+    dateFrom:  ACTIVE_DATE.from || ST.dateFrom,
+    dateTo:    ACTIVE_DATE.to   || ST.dateTo,
+    bool:      segs[0]?.bool      || '',
+    sentiment: segs[0]?.sentiment || 'any',
+    domain:    segs[0]?.domain    || '',
+    searchIds: segs[0]?.searchIds || ['all'],
+  };
+
+  const records = await dbQuery(sessionId, filter);
+
+  // Aggregate by domain
+  const domainMap = {};
+  records.forEach(r => {
+    const domain = r.domainName || '';
+    if(!domain) return;
+    if(!domainMap[domain]) domainMap[domain] = { count:0, mediaImpressions:0, mediaReach:0, engagement:0, records:[] };
+    domainMap[domain].count++;
+    domainMap[domain].mediaImpressions += r.mediaImpressions || 0;
+    domainMap[domain].mediaReach       += r.mediaReach       || 0;
+    domainMap[domain].engagement       += r.engagement       || 0;
+    domainMap[domain].records.push(r);
+  });
+
+  // Sort by chosen metric
+  const sorted = Object.entries(domainMap)
+    .sort((a,b) => b[1][metric] - a[1][metric])
+    .slice(0, limit);
+
+  if(!sorted.length) {
+    body.innerHTML = '<div style="color:var(--muted);padding:20px;font-size:13px;">No data available. Check your filters.</div>';
+    return;
+  }
+
+  const labels  = sorted.map(([d]) => d);
+  const values  = sorted.map(([,v]) => v[metric]);
+  const max     = values[0] || 1;
+  const colors  = sorted.map((_, i) => PALETTE[i % PALETTE.length]);
+
+  const metricLabels = { count:'Volume', mediaImpressions:'Media Impressions', mediaReach:'Media Reach', engagement:'Engagement' };
+
+  // Horizontal bar list (custom rendered — cleaner for domain names)
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+
+  sorted.forEach(([domain, data], i) => {
+    const pct   = ((data[metric] / max) * 100).toFixed(1);
+    const val   = data[metric] >= 1000000
+      ? (data[metric]/1000000).toFixed(1)+'M'
+      : data[metric] >= 1000
+      ? (data[metric]/1000).toFixed(1)+'K'
+      : data[metric].toLocaleString();
+
+    const row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:8px;cursor:pointer;padding:2px 0;';
+    row.title = `Click to view ${data.count.toLocaleString()} articles from ${domain}`;
+    row.innerHTML = `
+      <div style="font-size:11px;color:var(--text);width:${horizontal?'140px':'100px'};text-align:right;flex-shrink:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escHtml(domain)}</div>
+      <div style="flex:1;height:20px;background:var(--bg);position:relative;overflow:hidden;border-radius:1px;">
+        <div style="width:${pct}%;height:100%;background:${colors[i]};transition:width .5s cubic-bezier(.4,0,.2,1);"></div>
+      </div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);width:56px;text-align:right;flex-shrink:0;">${val}</div>`;
+    row.addEventListener('click', () => openMentions(domain, data.records, filter.bool));
+    row.addEventListener('mouseenter', () => row.style.background='rgba(0,212,180,.04)');
+    row.addEventListener('mouseleave', () => row.style.background='');
+    wrap.appendChild(row);
+  });
+
+  body.appendChild(wrap);
+
+  const metaEl = document.createElement('div');
+  metaEl.style.cssText = 'font-size:10px;color:var(--muted);margin-top:10px;display:flex;gap:12px;';
+  metaEl.innerHTML = `<span>Ranked by <strong style="color:var(--teal)">${metricLabels[metric]}</strong></span>
+    <span>${sorted.length} of ${Object.keys(domainMap).length} sites</span>
+    <span style="margin-left:auto;">Click a site to view its articles</span>`;
+  body.appendChild(metaEl);
 }
 
 // ── WORD CLOUD ──
