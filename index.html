@@ -126,6 +126,13 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
 .wc-word:hover{opacity:.6;}
 
 /* width toggle */
+/* drag and drop */
+.chart-panel[draggable="true"]{cursor:grab;}
+.chart-panel[draggable="true"]:active{cursor:grabbing;}
+.chart-panel.drag-over{outline:2px dashed var(--teal);outline-offset:-2px;background:rgba(0,212,180,.04);}
+.chart-panel.dragging{opacity:.4;}
+.drag-handle{display:flex;align-items:center;padding:0 4px;color:var(--muted);cursor:grab;font-size:14px;letter-spacing:-1px;user-select:none;}
+.drag-handle:hover{color:var(--teal);}
 .width-toggle{display:flex;gap:4px;}
 .width-btn{background:transparent;border:1px solid var(--border);color:var(--muted);padding:3px 8px;font-size:10px;letter-spacing:.04em;}
 .width-btn.active{border-color:var(--teal);color:var(--teal);}
@@ -1495,39 +1502,39 @@ async function buildChart() {
   autoSaveCharts();
 }
 
-function mountChartPanel(def, idx) {
+function mountChartPanel(def, idx, existingPanel = null) {
   const main = $('main-area');
   const ph   = main.querySelector('[data-placeholder]');
   if(ph) ph.remove();
 
-  const width  = def.width || 'full';
-  const orient = def.orientation || 'vertical';
+  const width      = def.width || 'full';
+  const orient     = def.orientation || 'vertical';
   const showOrient = ['bar','topsites'].includes(def.type);
 
   const panel = document.createElement('div');
-  panel.className = 'chart-panel ' + width;
+  panel.className    = 'chart-panel ' + width;
   panel.dataset.chartIdx = idx;
+  panel.draggable    = true;
+
   panel.innerHTML = `
     <div class="chart-panel-header">
-      <span class="chart-panel-title">${escHtml(def.title)}</span>
+      <div class="drag-handle" title="Drag to reorder">⠿</div>
+      <span class="chart-panel-title" style="flex:1;">${escHtml(def.title)}</span>
       <div class="chart-header-right">
-        <!-- Orientation toggle (bar + topsites only) -->
         ${showOrient ? `<div class="orient-toggle">
           <button class="orient-btn ${orient==='vertical'?'active':''}" onclick="setOrientation(${idx},'vertical')" title="Vertical">↕</button>
           <button class="orient-btn ${orient==='horizontal'?'active':''}" onclick="setOrientation(${idx},'horizontal')" title="Horizontal">↔</button>
         </div>` : ''}
-        <!-- Width toggle -->
         <div class="width-toggle">
           <button class="width-btn ${width==='half'?'active':''}" onclick="setChartWidth(${idx},'half')" title="Half width">½</button>
           <button class="width-btn ${width==='full'?'active':''}" onclick="setChartWidth(${idx},'full')" title="Full width">▬</button>
         </div>
-        <!-- ⋮ menu -->
         <button class="btn btn-ghost btn-xs" onclick="toggleChartMenu(${idx}, event)">⋮</button>
         <div class="chart-actions-menu" id="chart-menu-${idx}">
           <button class="chart-menu-item" onclick="openChartModal('${def.type}', ${idx}); closeAllMenus()">✏️ Edit chart</button>
           <button class="chart-menu-item" onclick="duplicateChart(${idx}); closeAllMenus()">⧉ Duplicate</button>
           <div class="chart-menu-divider"></div>
-          <div style="padding:6px 14px 4px; font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.08em;">Change type</div>
+          <div style="padding:6px 14px 4px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">Change type</div>
           ${['bar','line','pie','stacked-bar','wordcloud','topsites'].filter(t=>t!==def.type).map(t=>
             `<button class="chart-menu-item" onclick="changeChartType(${idx},'${t}'); closeAllMenus()">${chartTypeLabel(t)}</button>`
           ).join('')}
@@ -1537,9 +1544,22 @@ function mountChartPanel(def, idx) {
       </div>
     </div>
     <div class="chart-panel-body" id="cpb-${idx}"></div>`;
-  main.appendChild(panel);
 
-  // Close menu when clicking outside
+  // Insert in place of existing panel, or append
+  if(existingPanel && existingPanel.parentNode === main) {
+    main.insertBefore(panel, existingPanel);
+    existingPanel.remove();
+  } else {
+    main.appendChild(panel);
+  }
+
+  // Drag-and-drop events
+  panel.addEventListener('dragstart', onDragStart);
+  panel.addEventListener('dragend',   onDragEnd);
+  panel.addEventListener('dragover',  onDragOver);
+  panel.addEventListener('dragleave', onDragLeave);
+  panel.addEventListener('drop',      onDrop);
+
   document.addEventListener('click', closeAllMenus, { once: false });
 }
 
@@ -1557,6 +1577,102 @@ function toggleChartMenu(idx, e) {
 
 function closeAllMenus() {
   document.querySelectorAll('.chart-actions-menu.open').forEach(m => m.classList.remove('open'));
+}
+
+// ════════════════════════════════════════════════
+// DRAG AND DROP REORDERING
+// ════════════════════════════════════════════════
+let dragSrcIdx = null;
+
+function onDragStart(e) {
+  dragSrcIdx = parseInt(this.dataset.chartIdx);
+  this.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', dragSrcIdx);
+}
+
+function onDragEnd(e) {
+  this.classList.remove('dragging');
+  document.querySelectorAll('.chart-panel.drag-over')
+    .forEach(p => p.classList.remove('drag-over'));
+}
+
+function onDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const target = e.currentTarget;
+  if(parseInt(target.dataset.chartIdx) !== dragSrcIdx) {
+    document.querySelectorAll('.chart-panel.drag-over')
+      .forEach(p => p.classList.remove('drag-over'));
+    target.classList.add('drag-over');
+  }
+}
+
+function onDragLeave(e) {
+  this.classList.remove('drag-over');
+}
+
+function onDrop(e) {
+  e.preventDefault();
+  this.classList.remove('drag-over');
+
+  const targetIdx = parseInt(this.dataset.chartIdx);
+  if(dragSrcIdx === null || targetIdx === dragSrcIdx) return;
+
+  const main       = $('main-area');
+  const srcPanel   = document.querySelector('[data-chart-idx="'+dragSrcIdx+'"]');
+  const destPanel  = document.querySelector('[data-chart-idx="'+targetIdx+'"]');
+  if(!srcPanel || !destPanel) return;
+
+  // Swap in DOM
+  const srcNext = srcPanel.nextSibling;
+  if(destPanel.nextSibling === srcPanel) {
+    main.insertBefore(srcPanel, destPanel);
+  } else {
+    main.insertBefore(srcPanel, destPanel);
+    if(srcNext) main.insertBefore(destPanel, srcNext);
+    else main.appendChild(destPanel);
+  }
+
+  // Sync ST.chartDefs to match new DOM order
+  syncChartDefsToDOM();
+  autoSaveCharts();
+  dragSrcIdx = null;
+}
+
+// After drag, re-index chartDefs and panel data-chart-idx to match DOM order
+function syncChartDefsToDOM() {
+  const panels     = Array.from($('main-area').querySelectorAll('.chart-panel[data-chart-idx]'));
+  const oldDefs    = [...ST.chartDefs];
+  const oldInst    = {...ST.chartInstances};
+  const newDefs    = [];
+  const newInst    = {};
+
+  panels.forEach((panel, newIdx) => {
+    const oldIdx = parseInt(panel.dataset.chartIdx);
+    newDefs[newIdx] = oldDefs[oldIdx] || null;
+    newInst[newIdx] = oldInst[oldIdx] || null;
+    // Update panel index
+    panel.dataset.chartIdx = newIdx;
+    // Update all inline onclick idx references in this panel
+    panel.querySelectorAll('[onclick]').forEach(el => {
+      el.setAttribute('onclick',
+        el.getAttribute('onclick').replace(/\d+/g, match => {
+          // Only replace the chart index (the first numeric arg in these calls)
+          return match === String(oldIdx) ? String(newIdx) : match;
+        })
+      );
+    });
+    // Update chart body id
+    const body = panel.querySelector('.chart-panel-body');
+    if(body) body.id = 'cpb-' + newIdx;
+    // Update menu id
+    const menu = panel.querySelector('.chart-actions-menu');
+    if(menu) menu.id = 'chart-menu-' + newIdx;
+  });
+
+  ST.chartDefs      = newDefs;
+  ST.chartInstances = newInst;
 }
 
 function setChartWidth(idx, width) {
@@ -1593,27 +1709,23 @@ async function changeChartType(idx, newType) {
   const def = ST.chartDefs[idx];
   if(!def) return;
   def.type = newType;
-  // Reset type-specific settings
   if(newType === 'stacked-bar') { def.stackBars = def.stackBars||[]; def.stackSegs = def.stackSegs||[]; }
   if(newType === 'topsites')    { def.sitesMetric = def.sitesMetric||'count'; def.sitesLimit = def.sitesLimit||15; }
-  // Remount panel (updates the menu) and redraw
-  const panel = document.querySelector('[data-chart-idx="'+idx+'"]');
-  if(panel) panel.remove();
+  // Replace panel in-place so position is preserved
+  const existing = document.querySelector('[data-chart-idx="'+idx+'"]');
   if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} delete ST.chartInstances[idx]; }
-  mountChartPanel(def, idx);
+  mountChartPanel(def, idx, existing); // passes existing so it inserts before it
   await drawChart(def, idx);
   autoSaveCharts();
 }
 
 async function reDrawChart(idx) {
-  const def   = ST.chartDefs[idx];
-  const panel = document.querySelector(`[data-chart-idx="${idx}"]`);
-  if(!panel) return;
-  panel.querySelector('.chart-panel-title').textContent = def.title;
-  panel.className = 'chart-panel ' + (def.width || 'full');
-  const body = $('cpb-'+idx);
-  body.innerHTML = '';
+  const def      = ST.chartDefs[idx];
+  const existing = document.querySelector(`[data-chart-idx="${idx}"]`);
+  if(!existing) return;
+  // Remount header in-place (preserves position, updates menu/toggles)
   if(ST.chartInstances[idx]) { try { ST.chartInstances[idx].destroy(); } catch(e){} delete ST.chartInstances[idx]; }
+  mountChartPanel(def, idx, existing);
   await drawChart(def, idx);
 }
 
