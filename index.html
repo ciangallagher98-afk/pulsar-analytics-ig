@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pulsar Analytics</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chartjs-chart-sankey@0.12.1/dist/chartjs-chart-sankey.min.js"></script>
 <style>
 :root {
   --bg:#0A1628; --surface:#111E35; --surface2:#162240; --border:#1E2F4A;
@@ -474,6 +475,9 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
           <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('pie')">＋ Pie / donut chart</button>
           <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('wordcloud')">＋ Word cloud</button>
           <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('topsites')">＋ Top sites</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('stacked-area')">＋ Stacked area (over time)</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('heatmap')">＋ Heatmap</button>
+          <button class="btn btn-ghost btn-sm" style="width:100%;text-align:left;" onclick="openChartModal('sankey')">＋ Sankey (flow)</button>
         </div>
       </div>
     </div>
@@ -590,6 +594,26 @@ button{font-family:var(--font);cursor:pointer;transition:all .15s;border-radius:
           <label>Number of sites to show</label>
           <input type="number" id="m-topsites-limit" value="15" min="5" max="50" style="width:80px;" />
         </div>
+      </div>
+      <div id="m-heatmap-row" class="form-row hidden">
+        <label>Heatmap type</label>
+        <select id="m-heatmap-type">
+          <option value="activity">Activity — day of week × hour of day</option>
+          <option value="topicSentiment">Topic × Sentiment (top 15 topics)</option>
+          <option value="sourceSentiment">Source × Sentiment</option>
+        </select>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Uses the first segment below as a filter (boolean, sentiment, domain, search). Leave segment filters empty for all data.</div>
+      </div>
+      <div id="m-sankey-row" class="form-row hidden">
+        <label>Flow</label>
+        <select id="m-sankey-flow">
+          <option value="searchSentiment">Search → Sentiment</option>
+          <option value="sourceSentiment">Source → Sentiment</option>
+          <option value="topicEmotion">Topic → Emotion (top 12 topics)</option>
+          <option value="topicSentiment">Topic → Sentiment (top 12 topics)</option>
+          <option value="sourceTopic">Source → Topic (top 12 topics)</option>
+        </select>
+        <div style="font-size:10px;color:var(--muted);margin-top:4px;">Uses the first segment below as a filter. Leave segment filters empty for all data.</div>
       </div>
       <div id="m-wc-row" class="form-row hidden">
         <label>Word source field</label>
@@ -1345,16 +1369,21 @@ function openChartModal(type, editIdx = null) {
   $('m-gran-row').classList.add('hidden');
   $('m-wc-row').classList.add('hidden');
   $('m-topsites-row').classList.add('hidden');
+  $('m-heatmap-row').classList.add('hidden');
+  $('m-sankey-row').classList.add('hidden');
   $('m-stack-row').classList.add('hidden');
   $('m-standard-row').classList.remove('hidden');
   $('sb-bar-list').innerHTML  = '';
   $('sb-seg-list').innerHTML  = '';
 
-  const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud',topsites:'Top sites' };
+  const titles = { bar:'Bar chart','stacked-bar':'Stacked bar chart',line:'Line chart (over time)',pie:'Pie / donut chart',wordcloud:'Word cloud',topsites:'Top sites','stacked-area':'Stacked area (over time)',heatmap:'Heatmap',sankey:'Sankey diagram' };
   $('modal-title').textContent = titles[type] || 'Chart';
 
-  if(type === 'line')        $('m-gran-row').classList.remove('hidden');
-  if(type === 'wordcloud')   $('m-wc-row').classList.remove('hidden');
+  if(type === 'line')         $('m-gran-row').classList.remove('hidden');
+  if(type === 'stacked-area') $('m-gran-row').classList.remove('hidden');
+  if(type === 'wordcloud')    $('m-wc-row').classList.remove('hidden');
+  if(type === 'heatmap')      $('m-heatmap-row').classList.remove('hidden');
+  if(type === 'sankey')       $('m-sankey-row').classList.remove('hidden');
   if(type === 'topsites') {
     $('m-topsites-row').classList.remove('hidden');
   }
@@ -1376,6 +1405,8 @@ function openChartModal(type, editIdx = null) {
       if(def.sitesMetric) $('m-topsites-metric').value = def.sitesMetric;
       if(def.sitesLimit)  $('m-topsites-limit').value  = def.sitesLimit;
     }
+    if(type === 'heatmap' && def.heatmapType) $('m-heatmap-type').value = def.heatmapType;
+    if(type === 'sankey'  && def.sankeyFlow)  $('m-sankey-flow').value  = def.sankeyFlow;
     // Restore width radio
     const wval = def.width || 'full';
     const wRadio = document.querySelector(`input[name="m-width"][value="${wval}"]`);
@@ -1472,7 +1503,7 @@ function readSegments() {
 async function buildChart() {
   const segs = readSegments();
   // topsites doesn't need segments
-  if(ST.modalType !== 'topsites' && !segs.length) { alert('Add at least one segment.'); return; }
+  if(!['topsites','heatmap','sankey'].includes(ST.modalType) && !segs.length) { alert('Add at least one segment.'); return; }
   const selectedWidth = document.querySelector('input[name="m-width"]:checked')?.value || 'full';
   const def_ = ST.editingIdx !== null ? ST.chartDefs[ST.editingIdx] : null;
   const def = {
@@ -1486,6 +1517,8 @@ async function buildChart() {
     stackSegs:    readStackSegs(),
     sitesMetric:  $('m-topsites-metric').value,
     sitesLimit:   parseInt($('m-topsites-limit').value) || 15,
+    heatmapType:  $('m-heatmap-type').value,
+    sankeyFlow:   $('m-sankey-flow').value,
     orientation:  def_?.orientation || 'vertical', // preserve if re-editing
   };
   closeModal();
@@ -1535,7 +1568,7 @@ function mountChartPanel(def, idx, existingPanel = null) {
           <button class="chart-menu-item" onclick="duplicateChart(${idx}); closeAllMenus()">⧉ Duplicate</button>
           <div class="chart-menu-divider"></div>
           <div style="padding:6px 14px 4px;font-size:10px;color:var(--muted);text-transform:uppercase;letter-spacing:.08em;">Change type</div>
-          ${['bar','line','pie','stacked-bar','wordcloud','topsites'].filter(t=>t!==def.type).map(t=>
+          ${['bar','line','pie','stacked-bar','stacked-area','wordcloud','topsites','heatmap','sankey'].filter(t=>t!==def.type).map(t=>
             `<button class="chart-menu-item" onclick="changeChartType(${idx},'${t}'); closeAllMenus()">${chartTypeLabel(t)}</button>`
           ).join('')}
           <div class="chart-menu-divider"></div>
@@ -1565,7 +1598,8 @@ function mountChartPanel(def, idx, existingPanel = null) {
 
 function chartTypeLabel(t) {
   return { bar:'↕ Bar chart', line:'↗ Line chart', pie:'◕ Pie chart',
-    'stacked-bar':'▥ Stacked bar', wordcloud:'☁ Word cloud', topsites:'🌐 Top sites' }[t] || t;
+    'stacked-bar':'▥ Stacked bar', wordcloud:'☁ Word cloud', topsites:'🌐 Top sites',
+    'stacked-area':'▨ Stacked area', heatmap:'▦ Heatmap', sankey:'⇶ Sankey' }[t] || t;
 }
 
 function toggleChartMenu(idx, e) {
@@ -1749,7 +1783,7 @@ async function drawChart(def, idx) {
 
   // topsites queries IndexedDB itself; others resolve segments
   let segs = [];
-  if(!['stacked-bar','topsites'].includes(def.type)) {
+  if(!['stacked-bar','topsites','heatmap','sankey'].includes(def.type)) {
     segs = await Promise.all(
       (def.segments||[]).map(async s => ({ ...s, records: await resolveSegment(s) }))
     );
@@ -1762,7 +1796,10 @@ async function drawChart(def, idx) {
     case 'line':        drawLine(body, idx, def, segs); break;
     case 'pie':         drawPie(body, idx, segs); break;
     case 'wordcloud':   drawWordCloud(body, idx, def, segs); break;
-    case 'topsites':    await drawTopSites(body, idx, def); break;
+    case 'topsites':     await drawTopSites(body, idx, def); break;
+    case 'stacked-area': drawStackedArea(body, idx, def, segs); break;
+    case 'heatmap':      await drawHeatmap(body, idx, def); break;
+    case 'sankey':       await drawSankey(body, idx, def); break;
   }
 }
 
@@ -2893,6 +2930,292 @@ async function drawTopSites(body, idx, def) {
     <span>${sorted.length} of ${Object.keys(domainMap).length} sites</span>
     <span style="margin-left:auto;">Click a site to view its articles</span>`;
   body.appendChild(metaEl);
+}
+
+// ── STACKED AREA (over time) ──
+function drawStackedArea(body, idx, def, segs) {
+  const gran   = def.granularity || 'month';
+  const canvas = mkCanvas(body, 280);
+
+  function bucket(ds) {
+    const d = new Date(ds);
+    if(isNaN(d)) return null;
+    if(gran==='day')  return d.toISOString().slice(0,10);
+    if(gran==='week') {
+      const day=d.getDay(), diff=d.getDate()-day+(day===0?-6:1);
+      const nd=new Date(d); nd.setDate(diff); return nd.toISOString().slice(0,10);
+    }
+    return d.toISOString().slice(0,7);
+  }
+
+  const segBuckets = segs.map(s => {
+    const map = {};
+    s.records.forEach(r => {
+      const b = bucket(r.publishedAt);
+      if(b) { if(!map[b]) map[b]=[]; map[b].push(r); }
+    });
+    return map;
+  });
+
+  const allBuckets = [...new Set(segBuckets.flatMap(m => Object.keys(m)))].sort();
+
+  const datasets = segs.map((s, i) => ({
+    label: s.label,
+    data:  allBuckets.map(b => (segBuckets[i][b]||[]).length),
+    borderColor: s.color,
+    backgroundColor: s.color + '55',
+    borderWidth: 1.5,
+    pointRadius: 2,
+    tension: 0.3,
+    fill: true,
+  }));
+
+  const fmtB = b => {
+    const d = new Date(b+'T00:00:00Z');
+    if(gran==='day')  return d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    if(gran==='week') return 'w/c '+d.toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    return d.toLocaleDateString('en-GB',{month:'short',year:'2-digit'});
+  };
+
+  destroyChart(idx);
+  ST.chartInstances[idx] = new Chart(canvas, {
+    type:'line',
+    data:{ labels: allBuckets.map(fmtB), datasets },
+    options:{
+      responsive:true, maintainAspectRatio:false,
+      onClick: (_e, els) => {
+        if(!els.length) return;
+        const si  = els[0].datasetIndex;
+        const bkt = allBuckets[els[0].index];
+        openMentions(segs[si].label + ' — ' + fmtB(bkt), segBuckets[si][bkt]||[], segs[si].bool||'');
+      },
+      plugins:{ legend:{display:false}, tooltip:{...TOOLTIP, mode:'index', intersect:false} },
+      scales:{
+        x:{ ...SCALES.x, ticks:{...SCALES.x.ticks, maxTicksLimit:14} },
+        y:{ ...SCALES.y, stacked:true },
+      }
+    }
+  });
+  canvas.style.cursor = 'pointer';
+  mkLegend(body, segs);
+}
+
+// ── HEATMAP ──
+async function drawHeatmap(body, idx, def) {
+  const sessionId = ST.currentSessionId;
+  if(!sessionId) return;
+
+  const hType = def.heatmapType || 'activity';
+  const seg   = (def.segments||[])[0] || {};
+  const filter = {
+    dateFrom:  ACTIVE_DATE.from || ST.dateFrom,
+    dateTo:    ACTIVE_DATE.to   || ST.dateTo,
+    bool:      seg.bool      || '',
+    sentiment: seg.sentiment || 'any',
+    domain:    seg.domain    || '',
+    searchIds: seg.searchIds || ['all'],
+  };
+  const records = await dbQuery(sessionId, filter);
+
+  if(!records.length) {
+    body.innerHTML = '<div style="color:var(--muted);padding:20px;font-size:13px;">No data for this filter.</div>';
+    return;
+  }
+
+  // Build rows × cols with record lists per cell
+  let rowLabels = [], colLabels = [], cells = {}; // cells['r|c'] = [recs]
+  const put = (r, c, rec) => { const k = r+'|'+c; if(!cells[k]) cells[k]=[]; cells[k].push(rec); };
+
+  if(hType === 'activity') {
+    rowLabels = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
+    colLabels = Array.from({length:24}, (_,h) => String(h).padStart(2,'0'));
+    records.forEach(rec => {
+      const d = new Date(rec.publishedAt);
+      if(isNaN(d)) return;
+      const day = (d.getDay()+6)%7; // Mon=0
+      put(rowLabels[day], colLabels[d.getHours()], rec);
+    });
+  } else {
+    colLabels = ['Positive','Neutral','Negative'];
+    const sentOf = r => { const l = sentimentLabel(r); return l.charAt(0).toUpperCase()+l.slice(1); };
+    if(hType === 'topicSentiment') {
+      // Top 15 topics by frequency
+      const tCount = {};
+      records.forEach(r => (Array.isArray(r.topics)?r.topics:[]).forEach(t => { tCount[t]=(tCount[t]||0)+1; }));
+      rowLabels = Object.entries(tCount).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([t])=>t);
+      const rowSet = new Set(rowLabels);
+      records.forEach(rec => {
+        (Array.isArray(rec.topics)?rec.topics:[]).forEach(t => {
+          if(rowSet.has(t)) put(t, sentOf(rec), rec);
+        });
+      });
+    } else { // sourceSentiment
+      rowLabels = [...new Set(records.map(r => fmtSource(r.source||'')).filter(Boolean))].sort();
+      records.forEach(rec => put(fmtSource(rec.source||''), sentOf(rec), rec));
+    }
+  }
+
+  const max = Math.max(1, ...Object.values(cells).map(a => a.length));
+  const isWide = colLabels.length > 10;
+
+  const wrap = document.createElement('div');
+  wrap.style.cssText = 'overflow-x:auto;';
+  const table = document.createElement('div');
+  table.style.cssText = `display:grid;grid-template-columns:${hType==='activity'?'46px':'150px'} repeat(${colLabels.length},1fr);gap:2px;min-width:${isWide?'640px':'0'};`;
+
+  // Header row
+  table.appendChild(document.createElement('div'));
+  colLabels.forEach(c => {
+    const h = document.createElement('div');
+    h.style.cssText = 'font-size:9px;color:var(--muted);text-align:center;padding:2px 0;overflow:hidden;white-space:nowrap;';
+    h.textContent = c;
+    table.appendChild(h);
+  });
+
+  rowLabels.forEach(r => {
+    const lbl = document.createElement('div');
+    lbl.style.cssText = 'font-size:10px;color:var(--text);display:flex;align-items:center;justify-content:flex-end;padding-right:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;';
+    lbl.title = r;
+    lbl.textContent = r;
+    table.appendChild(lbl);
+
+    colLabels.forEach(c => {
+      const recs  = cells[r+'|'+c] || [];
+      const ratio = recs.length / max;
+      const cell  = document.createElement('div');
+      cell.style.cssText = `height:${hType==='activity'?'18px':'24px'};border-radius:1px;cursor:${recs.length?'pointer':'default'};display:flex;align-items:center;justify-content:center;font-size:9px;font-family:var(--mono);transition:outline .1s;
+        background:${recs.length ? `rgba(0,212,180,${(0.12+0.88*ratio).toFixed(2)})` : 'rgba(255,255,255,.03)'};
+        color:${ratio>0.5?'#0A1628':'var(--muted)'};`;
+      if(recs.length && (hType!=='activity' || ratio>0.25)) cell.textContent = recs.length;
+      cell.title = `${r} × ${c}: ${recs.length.toLocaleString()} mentions`;
+      if(recs.length) {
+        cell.addEventListener('click', () => openMentions(`${r} × ${c}`, recs, seg.bool||''));
+        cell.addEventListener('mouseenter', () => cell.style.outline='1px solid var(--teal)');
+        cell.addEventListener('mouseleave', () => cell.style.outline='');
+      }
+      table.appendChild(cell);
+    });
+  });
+
+  wrap.appendChild(table);
+  body.appendChild(wrap);
+
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:8px;';
+  hint.textContent = `${records.length.toLocaleString()} records · darker = more mentions · click a cell to view mentions`;
+  body.appendChild(hint);
+}
+
+// ── SANKEY ──
+async function drawSankey(body, idx, def) {
+  const sessionId = ST.currentSessionId;
+  if(!sessionId) return;
+
+  if(typeof Chart === 'undefined' || !Chart.registry.controllers.get('sankey')) {
+    body.innerHTML = '<div style="color:var(--muted);padding:20px;font-size:13px;">Sankey plugin failed to load — check your internet connection and refresh.</div>';
+    return;
+  }
+
+  const flow = def.sankeyFlow || 'searchSentiment';
+  const seg  = (def.segments||[])[0] || {};
+  const filter = {
+    dateFrom:  ACTIVE_DATE.from || ST.dateFrom,
+    dateTo:    ACTIVE_DATE.to   || ST.dateTo,
+    bool:      seg.bool      || '',
+    sentiment: seg.sentiment || 'any',
+    domain:    seg.domain    || '',
+    searchIds: seg.searchIds || ['all'],
+  };
+  const records = await dbQuery(sessionId, filter);
+  if(!records.length) {
+    body.innerHTML = '<div style="color:var(--muted);padding:20px;font-size:13px;">No data for this filter.</div>';
+    return;
+  }
+
+  const searchName = {};
+  ST.selectedSearches.forEach(s => { searchName[String(s.id)] = s.name; });
+  const sentOf = r => { const l = sentimentLabel(r); return l.charAt(0).toUpperCase()+l.slice(1); };
+
+  // Top-12 topic set when needed
+  let topTopics = null;
+  if(flow.startsWith('topic') || flow === 'sourceTopic') {
+    const tCount = {};
+    records.forEach(r => (Array.isArray(r.topics)?r.topics:[]).forEach(t => { tCount[t]=(tCount[t]||0)+1; }));
+    topTopics = new Set(Object.entries(tCount).sort((a,b)=>b[1]-a[1]).slice(0,12).map(([t])=>t));
+  }
+
+  // Build links: key 'from|to' → records
+  const linkRecs = {};
+  const add = (from, to, rec) => {
+    if(!from || !to) return;
+    const k = from+'|'+to;
+    if(!linkRecs[k]) linkRecs[k]=[];
+    linkRecs[k].push(rec);
+  };
+
+  records.forEach(rec => {
+    if(flow === 'searchSentiment')      add(searchName[String(rec.searchId)]||'Unknown search', sentOf(rec), rec);
+    else if(flow === 'sourceSentiment') add(fmtSource(rec.source||'')||'Unknown', sentOf(rec), rec);
+    else if(flow === 'topicEmotion')    (rec.topics||[]).forEach(t => { if(topTopics.has(t)) add(t, rec.emotion ? rec.emotion.charAt(0).toUpperCase()+rec.emotion.slice(1) : 'No emotion', rec); });
+    else if(flow === 'topicSentiment')  (rec.topics||[]).forEach(t => { if(topTopics.has(t)) add(t, sentOf(rec), rec); });
+    else if(flow === 'sourceTopic')     (rec.topics||[]).forEach(t => { if(topTopics.has(t)) add(fmtSource(rec.source||'')||'Unknown', t, rec); });
+  });
+
+  const links = Object.entries(linkRecs)
+    .map(([k, recs]) => { const [from, to] = k.split('|'); return { from, to, flow: recs.length, _recs: recs }; })
+    .sort((a,b) => b.flow - a.flow)
+    .slice(0, 40); // keep readable
+
+  if(!links.length) {
+    body.innerHTML = '<div style="color:var(--muted);padding:20px;font-size:13px;">Not enough data to build this flow.</div>';
+    return;
+  }
+
+  // Node colours
+  const nodeColor = {};
+  let ci = 0;
+  links.forEach(l => {
+    if(!nodeColor[l.from]) nodeColor[l.from] = PALETTE[ci++ % PALETTE.length];
+    if(!nodeColor[l.to]) {
+      nodeColor[l.to] = { Positive:'#22c55e', Neutral:'#94a3b8', Negative:'#ef4444' }[l.to] || PALETTE[ci++ % PALETTE.length];
+    }
+  });
+
+  const canvas = mkCanvas(body, Math.max(300, links.length * 11));
+
+  destroyChart(idx);
+  ST.chartInstances[idx] = new Chart(canvas, {
+    type: 'sankey',
+    data: {
+      datasets: [{
+        data: links.map(l => ({ from: l.from, to: l.to, flow: l.flow })),
+        colorFrom: ctx => nodeColor[links[ctx.dataIndex]?.from] || '#00D4B4',
+        colorTo:   ctx => nodeColor[links[ctx.dataIndex]?.to]   || '#3B82F6',
+        colorMode: 'gradient',
+        borderWidth: 0,
+        labels: {},
+        color: '#E2E8F0',
+        font: { size: 11, family: "'IBM Plex Sans', sans-serif" },
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      onClick: (_e, els) => {
+        if(!els.length) return;
+        const l = links[els[0].index];
+        if(l) openMentions(l.from + ' → ' + l.to, l._recs, seg.bool||'');
+      },
+      plugins: { tooltip: {...TOOLTIP,
+        callbacks: { label: ctx => { const l = links[ctx.dataIndex]; return ` ${l.from} → ${l.to}: ${l.flow.toLocaleString()}`; } }
+      } },
+    }
+  });
+  canvas.style.cursor = 'pointer';
+
+  const hint = document.createElement('div');
+  hint.style.cssText = 'font-size:10px;color:var(--muted);margin-top:8px;';
+  hint.textContent = `Top ${links.length} flows shown · click a flow to view mentions`;
+  body.appendChild(hint);
 }
 
 // ── WORD CLOUD ──
